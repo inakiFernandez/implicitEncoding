@@ -6,7 +6,7 @@ from __future__ import division
     Launcher, entry point for the pleiotropy experiments
 """
 #from ea.genome import Genome
-#TODO GITify everything. Create repository on github
+#TODO check GITification 
 
 from pybrain.structure import FeedForwardNetwork, LinearLayer
 from pybrain.structure import FullConnection, SigmoidLayer, BiasUnit
