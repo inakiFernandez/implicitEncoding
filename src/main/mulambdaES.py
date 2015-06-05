@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 
 ###############################################################################
 ####################################Plotting###################################
-#import os, re, sys
+import sys # os, re
 #from os import listdir
 #from os.path import isfile, join
 #from scipy.stats import *
@@ -152,7 +152,7 @@ def select(p, f, nbSel):
     #Truncation selection ","
     parents = sortedPop[:mu]
            
-    return np.mean(parents, axis=1)
+    return np.mean(parents, axis=0)
 
 def sampleOffspring(centr, l, sig, n):
     return np.random.multivariate_normal(centr, np.identity(n) * sig, l)
@@ -196,14 +196,12 @@ def mux1(x):
     else:
         return x[np.ceil((len(x)-1)/2) + 1: len(x) - 1]            
 
-###############################################################################
 ##############NN fixed structure definition - fully connected MLP##############
-percepts = 50; out = 1; nbHLayers = 1; neurPerLayer = 3; bias = True
-#Unnecessary if initialized centroid. 
+percepts = 5; out = 1; nbHLayers = 1; neurPerLayer = 3; bias = True
+#Unnecessary if initialized centroid:
 #Boundaries of initial weights. minWVal = -10; maxWVal = +10
-###############################################################################
 #########################Training DB construction##############################
-pbDb = []; labelDb = []; pbSz = percepts; dbSz = 200
+pbDb = []; labelDb = []; pbSz = percepts; dbSz = 100
 problemID = "MIN"#"MIN", "AND", "OR", "MAJ"
 #TODO TOFIX: "MUX1" (distance definitions in N-dimensional spaces needed)
 for i in xrange(dbSz):
@@ -222,7 +220,7 @@ sigma0 = 0.5; sigma = sigma0; lmbda = 20; mu = int(np.floor(lmbda / 2  ));
 maxGen = 10; bestEver = None #Best individual
 sigmas = [0]*(maxGen + 1); sigmas[0] = sigma
 ########################Population initialization##############################
-#TODO Other methods for pop init. 
+#TODO Other connectivity patterns
 #Implemented: fully connected MLP with 0-* hidden layers with the same number
 #of neurons per layer optional bias 
 auxNN = fullConnectionNet(percepts, out, nbHLayers, neurPerLayer, bias)
@@ -232,6 +230,9 @@ m0 = [0] * spaceDim; m = m0
 centroids = [[0]*spaceDim for i in range(maxGen + 1)]; centroids[0] = m
 #parents = (maxWVal - minWVal) * np.random_sample((mu, spaceDim)) - minWVal
 fitness = [[0]*lmbda for i in range(maxGen + 1)]
+print "Starting evolution of neural nets for " + problemID + " problem with "
+print str(pbSz) + " boolean inputs"
+print "Search space : R^" + str(spaceDim)
 
 #TODO TOCHECK termination conditions and data structures boundaries
 #TODO other stopping criteria    
@@ -247,14 +248,16 @@ for g in xrange(maxGen):
                             pbDb, labelDb)
     #TODO sort to keep bestEver        
     #TODO check selection and mutation/sampleOffspring methods
-    m = select(pop, fitness[g], mu)
+    m = select(offspring, fitness[g], mu)
     centroids[g + 1] = m
     #TODO Update sigma and store it    
     
 print "Generation: " + str(maxGen)         
 #Last generation eval
-for ind in xrange(popSz):    
-    fitness[maxGen][ind] = evaluate(pop[ind], pbDb, labelDb)
+offspring = sampleOffspring(m, lmbda, sigma, spaceDim)
+for ind in xrange(lmbda):    
+    fitness[maxGen][ind] = evaluate(decode(offspring[ind], percepts, out, 
+                                nbHLayers, neurPerLayer, bias), pbDb, labelDb)
 
 axis = plt.subplot2grid((1,1), (0,0))
 plot_one_curve(zip(*fitness), colors[0], axis, "Fitness", True)
