@@ -140,7 +140,8 @@ def evaluate(indiv, pbDb, labelDb):
     for i in xrange(len(pbDb)):
         answer = round(indiv.activate(pbDb[i]),0)
         #TODO Compute Error to be minimized (difference, or quadratic difference)
-        #régression symbolique
+        #of actual value of activation, not rounded
+        #regression symbolique
         fit += (answer == labelDb[i])    
     #Balance fitness w.r.t. proportion of same-valued answers:
     #e.g. 99 True, 1 False
