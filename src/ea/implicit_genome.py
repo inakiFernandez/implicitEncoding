@@ -19,7 +19,14 @@ import colorama as clr
 import exceptions as exc
 import brewer2mpl
 from pylab import subplot2grid
+import ea.load_classif_image as classif
 #import parse; import difflib
+
+
+class PrettyFloat(float):
+    "Two digit print representation for floating numbers"
+    def __repr__(self):
+        return "%0.2f" % self
 
 
 class AutoVivification(dict):
@@ -52,7 +59,7 @@ def do_nothing(genome):
     return genome
 
 
-def random_genome(size, sym=['0', '1']):
+def random_genome(size, sym):
     """Create random string of given symbols with given size"""
     genome = []
     for _ in xrange(size):
@@ -60,13 +67,37 @@ def random_genome(size, sym=['0', '1']):
     return genome
 
 
-def task(vector, task_id):
+def task(vector, task_id, image=None):
     """Return output of given task on given input vector"""
     tasks = {"AND": all, "OR": any, "MAJ": majority, "MIN": minority,
-             "RETAND": retina_and, "RETOR": retina_or}  # "MUX1": mux1,
+             "RETAND": retina_and, "RETOR": retina_or, "IMG": classify_img}
+             # "MUX1": mux1,
 
-    int_vector = [int(round(element)) for element in vector]
-    return tasks[task_id](int_vector)
+    #float vector?
+    if task_id == "IMG":
+        return classify_img(vector, image)
+    else:
+        int_vector = [int(round(element)) for element in vector]
+        return tasks[task_id](int_vector)
+
+
+def load_img(filename):
+    """External call for loading a png image and returning it as a list of
+    pixels starting from top-leftmost pixel, from left to right, then from
+    top to bottom"""
+    return classif.read_image(filename)
+
+
+def classify_img(input_x, image):
+    """Return the pixel value (0 or 1, for black or white), given coordinates
+    in input_x = (x_coord, y_coord)"""
+    height = image[1]
+    width = image[0]
+    y_coordinate = int(round(input_x[1] * height))
+    x_coordinate = int(round(input_x[0] * width))
+    print y_coordinate, " of ", height, ", and ", x_coordinate, " of ", width
+
+    return list(itertools.chain(image[2]))[y_coordinate][x_coordinate]
 
 
 def retina_and(input_x):
@@ -161,7 +192,8 @@ def frag_move(genome):
     frag = genome[first:second]
     #Insert drawn fragment at random position in the pruned offspring
     at_position = random.choice(xrange(len(offspring) + 1))
-    offspring = genome[:first] + g[second:]
+
+    offspring = genome[:first] + genome[second:]
 
     beginning = offspring[0:at_position]
     end = offspring[at_position:]
@@ -187,7 +219,7 @@ def bit_flip(genome, prob):
     """Bit-flip at all positions, each with a probability prob
     For binary genomes only.
     Other mutation operators to define in non-binary case"""
-    offspring = genome
+    offspring = genome[:]
 
     for idx, char in enumerate(offspring):
         if np.random.uniform() < prob:
@@ -201,12 +233,14 @@ def bit_flip(genome, prob):
     return offspring
 
 
-def random_genome_with_genes(junk, nb_links, start_codon, end_codon,
-                             nucl_per_weight, sym=['0', '1']):
+def random_genome_with_genes(junk, nb_links, limit_codons, nucl_per_weight,
+                             sym):
     """Create a random genome string with given number of link genes, using
     given start and end codons and given symbol alphabet. It sets a random
     initial weight field of nucl_per_weight characters, and "junk" characters
     in total are added into inter-gene space"""
+    start_codon = limit_codons[0]
+    end_codon = limit_codons[1]
     genome = []
     interstices = nb_links + 1
     junk_per_interstice = int(math.floor(junk / interstices))
@@ -233,10 +267,12 @@ def random_genome_with_genes(junk, nb_links, start_codon, end_codon,
 
 
 def create_genome(nb_links, fraction_junk_genes, nucleotids_per_gene,
-                  start_codon, end_codon, sym=['0', '1']):
+                  limit_codons, sym):
     """Compute necessary parameters (target field size, effective genome size
     including junk nucleotids), and call random_genome_with_genes to create
     a genome including all specified nb_links"""
+    start_codon = limit_codons[0]
+    end_codon = limit_codons[1]
     target_size = int(math.ceil(max(1, math.log(nb_links, len(sym)))))
     sze = nb_links * (target_size + len(start_codon) + len(end_codon) +
                       nucleotids_per_gene)
@@ -244,7 +280,7 @@ def create_genome(nb_links, fraction_junk_genes, nucleotids_per_gene,
 
     genome = random_genome_with_genes(
         int(math.floor(effective_size * fraction_junk_genes)),
-        nb_links, start_codon, end_codon, nucleotids_per_gene)
+        nb_links, limit_codons, nucleotids_per_gene, sym)
     #Robustness through redundancy?
     return genome
 
@@ -295,13 +331,14 @@ def map_to_standard_mlp(codon_list, n_in, n_out, n_hidden=0, neur_per_hid=0,
     h_layer = 0  # for looping over hidden layers
 
     target_set = set(xrange(num_links))
-    grouped_codons = [[codon_id, [y[1] for y in codon_list
-                                  if y[0] == codon_id]]
+    grouped_codons = [[codon_id, [codon[1] for codon in codon_list
+                                  if codon[0] == codon_id]]
                       for codon_id in target_set]
     #Loop over all possible link identifiers
     for link in xrange(num_links):
         #Retrieve the list of weights of codons pointing to current link
-        gene_weights = [y[1] for y in grouped_codons if y[0] == link]
+        gene_weights = [codon[1] for codon
+                        in grouped_codons if codon[0] == link]
         gene_weights = list(itertools.chain.from_iterable(gene_weights))
 
         #if there is no codon pointing to current link, the link is still
@@ -393,29 +430,35 @@ def map_to_standard_mlp(codon_list, n_in, n_out, n_hidden=0, neur_per_hid=0,
     return mapped_net
 
 
-def extract_codons(genome, target_size, start_codon, end_codon,
-                   max_weight=5.0, pleio=False):
+def extract_codons(genome, target_size, limit_codons, max_weight=1.0,
+                   pleio=False):
     """Extracts the sequence of coding genes from genome, using given start
     and end codons and with given targeted link string size. Connection weight
     is capped in [-max_weight, max_weight]. Pleiotropy can be switched on and
     off. It also returns a user-friendly representation of the genomes
     with the codons segmentated and color-coded"""
+    start_codon = limit_codons[0]
+    end_codon = limit_codons[1]
     codon_list = []
     idx = 0
     out_str = ""
-    spacing = " \n---\n "
+    gene_str = ""
+    spacing = "  ||  "  # " \n---\n "
     separator = " - "
 
     while idx in xrange(len(genome)):
         #If there is a start codon, then read a whole gene
         if "".join(genome[idx:]).startswith(start_codon):
+            gene_start_index = idx
             idx = idx + len(start_codon)
-            out_str = out_str + spacing + clr.Back.YELLOW \
-                + start_codon + clr.Back.RESET + separator
+
+            gene_str = spacing + clr.Back.YELLOW \
+                + "".join(genome[gene_start_index:idx]) +\
+                clr.Back.RESET + separator
             #Read target field: it corresponds to the targeted link ID
             tgt = genome[idx:idx + target_size]
-            out_str = out_str + clr.Back.CYAN + \
-                "".join(tgt) + clr.Back.RESET + separator
+            gene_str = gene_str + clr.Back.CYAN + "".join(tgt) +\
+                clr.Back.RESET + separator
             idx = idx + target_size
             j = idx
             #Look for the end codon, in order to delimitate the weight field:
@@ -425,24 +468,31 @@ def extract_codons(genome, target_size, start_codon, end_codon,
                 j = j + 1
             #If there was an end codon, then the gene was valid, so we add it
             #to the list of codons (ID, weight)
-            if j <= len(genome):
+            if j < len(genome):
                 weight_string = genome[idx:j]
-                out_str = out_str + clr.Back.GREEN + "".join(weight_string) + \
-                    clr.Back.RESET + separator
+                gene_str = gene_str + clr.Back.GREEN +\
+                    "".join(weight_string) + clr.Back.RESET + separator
                 if len(weight_string) == 0:
                     codon_list.append([int("".join(tgt), 2), 0.0])
                 else:
                     codon_list.append([
                         int("".join(tgt), 2),
-                        2 * max_weight * weight_string.count("1") /
+                        2.0 * max_weight * weight_string.count("1") /
                         len(weight_string) - max_weight])
+
+                gene_str = gene_str + clr.Back.YELLOW + \
+                    "".join(genome[j:j + len(end_codon)]) +\
+                    clr.Back.RESET + spacing
+
+                out_str = out_str + gene_str
+                gene_str = ""
             else:
                 #if genome read is finished and the current gene is not ended
                 #it is not a valid gene, and it is not added to the codon list
-                out_str = out_str + "".join(genome[idx:])
+                out_str = out_str + "".join(genome[gene_start_index:])
+                gene_str = ""
                 break
-            out_str = out_str + clr.Back.YELLOW + end_codon + \
-                clr.Back.RESET + spacing
+            #TOTEST pleiotropy
             if pleio:
                 #If pleiotropy is activated, continue reading just after
                 #previous gene's start codon
@@ -483,9 +533,10 @@ def mutate(genome):
     return offspring
 
 
-def evaluate(indiv, problem_db, lbl_db, nb_instances=-1):
+def evaluate(ind, problem_db, lbl_db, nb_instances=-1):
     """Evaluate indiv NN on nb_instances
     with input=problem_db and output=lbl_db"""
+    #TODO eval always on the same instances
     fit = 0
     if nb_instances == -1:
         instances = problem_db
@@ -499,7 +550,11 @@ def evaluate(indiv, problem_db, lbl_db, nb_instances=-1):
         answers = [lbl_db[instance] for instance in idx_instances]
 
     for idx, inp in enumerate(instances):
-        nn_answer = indiv.activate(inp)
+        #print inp
+        #print answers[idx]
+        nn_answer = ind.activate(inp)
+        #print nn_answer
+        #print
         #Error on each instance (euclidian distance to right answer)
         #is normalized between 0 and 1
         error = np.linalg.norm(np.subtract(nn_answer, answers[idx])) / \
@@ -510,32 +565,35 @@ def evaluate(indiv, problem_db, lbl_db, nb_instances=-1):
     return fit/float(len(instances))
 
 
-def select(fitness, nb_parents):
+def select(population, nb_parents):
     """Parent rank-based selection of lambda (= nb_parents) parents, to be
     mutated afterwards"""
-    selected_parents = []
-    sorted_indexes = [idx[0] for idx in sorted(enumerate(fitness),
+    selected_indexes = [("", 0.0, [], "", None)] * nb_parents
+    fitness_list = [ind[1] for ind in population]
+    sorted_indexes = [idx[0] for idx in sorted(enumerate(fitness_list),
                                                key=lambda x: x[1])]
     rank_weight = [idx[0] for idx in enumerate(sorted_indexes)]
-    triang_number = len(fitness) * (len(fitness) + 1)/2
+    triang_number = len(fitness_list) * (len(fitness_list) + 1)/2
     rank_proba = [float(idx + 1)/float(triang_number) for idx in rank_weight]
     #Select with replacement with rank-based probabilities
     for idx in xrange(nb_parents):
         chosen = np.random.choice(sorted_indexes, p=rank_proba)
-        selected_parents.append(chosen)
+        selected_indexes[idx] = chosen
 
-    condition = (nb_parents == len(selected_parents))
+    condition = (nb_parents == len(selected_indexes))
     assert condition, "Wrong number of selected parents"
+    selected_parents = [population[ind] for ind in selected_indexes]
     return selected_parents
 
 
-def survive(fitness, mu_nb_par):
+def survive(population, mu_nb_par):
     """Truncation + survivor selection of the best mu_nb_par individuals
     of both children and parents"""
-    sorted_index = [index_fitness[0] for index_fitness in
-                    sorted(enumerate(fitness), key=lambda x: x[1])]
-    survivors_index = sorted_index[-mu_nb_par:]
-    return survivors_index
+    sorted_individuals = [ind for ind in sorted(population,
+                                                key=lambda x: x[1])]
+    survivors = sorted_individuals[-mu_nb_par:]
+    return survivors
+
 
 if __name__ == "__main__":
     clr.init()
@@ -544,22 +602,20 @@ if __name__ == "__main__":
     PARSER.read(CONFIG)
     PARAMS = AutoVivification()
     VERBOSE = False
-    C = []
+
     for s in PARSER.sections():
         PARAMS[s] = map_config(s)
 ###############################################################################
-    #TODO different symbol alphabet (different base for weight, different
-    #numbering of links) randomGenome(10, list(string.ascii_lowercase))
     N_OUT = 1  # One output for logical binary output
     N_IN = 2  # 8 for retina pb
-    N_HID = 0
-    NEUR_HID_LAYER = 0
+    N_HID = 1
+    NEUR_HID_LAYER = 2
     #Proportion of junk genes in-between genes on initialization of the genome
     FRAC_JUNK_GENES = 0.0
     SYMBOLS = ['0', '1']
     #Number of nucleotids for weight field on initialization
     #(the more nucleotids, the finer the resolution of initial weights)
-    NB_WEIGHT_VALUES = 5
+    NB_WEIGHT_VALUES = 2
     NUCL_PER_WEIGHT = NB_WEIGHT_VALUES - 1
     #How to select start and end codons? Shorter (i.e. easier to randomly draw)
     #codons are more prone to disruptive variation? (are offspring viable?)
@@ -569,191 +625,163 @@ if __name__ == "__main__":
     #END_CODON = "101011101101101100001111"
     #START_CODON = "111010010100"
     #END_CODON = "010100011011"
-    START_CODON = "11111"
-    END_CODON = "00000"
+    START_CODON = "101001010011"
+    END_CODON = "010110101100"
     #START_CODON = "11010"
     #END_CODON = "00110"
-    print "START_CODON: ", START_CODON
-    print "END_CODON: ", END_CODON
 
     if N_HID == 0:
         N_LINKS = N_IN * N_OUT
     else:
-        N_LINKS = N_IN * NEUR_HID_LAYER + (N_HID - 1) * NEUR_HID_LAYER**2 + \
+        N_LINKS = N_IN * NEUR_HID_LAYER + (N_HID - 1) * NEUR_HID_LAYER**2 +\
             NEUR_HID_LAYER * N_OUT
     TGT_SIZE = int(math.ceil(max(1, math.log(N_LINKS, len(SYMBOLS)))))
-    print "TARGET_SIZE: ", TGT_SIZE
+    #print "TARGET_SIZE: ", TGT_SIZE
 ###############################################################################
     PROBLEM_DB = []
     LABEL_DB = []
     PROBLEM_SIZE = N_IN
     DB_SIZE = -1  # dbSz = -1 for whole problem
-    PROBLEM_ID = "MIN"  # "RETAND" # "MIN", "AND", "OR", "MAJ", "RETOR"
-    #Generate all instances
-    for i in xrange(len(SYMBOLS)**PROBLEM_SIZE):
-        #binary in this case, different base for other symbol sets
-        v = [float(k) for k in list(("{0:0%sb}" % str(PROBLEM_SIZE)).
-             format(i))]
-        PROBLEM_DB.append(v)
-        LABEL_DB.append(task(v, PROBLEM_ID))
+    TASK_SEQUENCE = ["t1.png", "t2.png", "t3.png", "t4.png", "t5.png"]
+    # "RETAND" "MIN", "AND", "OR", "MAJ", "RETOR" "IMG"
+    PROBLEM_ID = "IMG"
+    if PROBLEM_ID != "IMG":
+        PROBLEM_ID = TASK_SEQUENCE[0]
+    else:
+        IMG_FILENAME = TASK_SEQUENCE[0]
+
+    if PROBLEM_ID == "IMG":
+        IMG = load_img(IMG_FILENAME)
+        PROBLEM_DB = [[y / float(IMG[1]), x / float(IMG[0])]
+                      for y in xrange(IMG[1]) for x in xrange(IMG[0])]
+        LABEL_DB = [x / 255 for x in IMG[2]]
+        NB_INSTANCES = IMG[0] * IMG[1] / 10
+    else:
+        #Generate all instances
+        for i in xrange(len(SYMBOLS)**PROBLEM_SIZE):
+            #binary in this case, different base for other symbol sets
+            input_vector = [float(k) for k in
+                            list(("{0:0%sb}" % str(PROBLEM_SIZE)).format(i))]
+            PROBLEM_DB.append(input_vector)
+            LABEL_DB.append(task(input_vector, PROBLEM_ID, IMG))
+    #print PROBLEM_DB
+    #print LABEL_DB
+    print NB_INSTANCES
 
 ###############################################################################
 ###############################################################################
 ##########################Evolutionary algorithm###############################
-    MU = 2
-    NB_GENERATIONS = 2
+    MU = 5
+    NB_GENERATIONS = 15
     PARENT_CHILDREN_RATIO = 1.0  # number of children per parent
     # selectionRatio * mu == lambda nb of children
     LAMBDA = int(round(MU * PARENT_CHILDREN_RATIO))
     #mu parents in the beginning and lbda children every generation
-    #maxEval = MU + LAMBDA* NB_GENERATIONS
     POPULATION = []
-    NETS = []
-    CODON_LIST = []
-    PRETTY_GENOME_LIST = []
+    POPULATION = [("", 0.0, [], "", None)] * MU
 
     PRETTY_GENOME_STRING = ""
-    print "Init population"
+
     #Initial population: mu individuals
     #Valid ones (all random links correctly encoded) OR random binary string
     for i in xrange(MU):
-        #g  = list(np.random.choice(SYMBOLS, size = 150 ))
         g = create_genome(N_LINKS, FRAC_JUNK_GENES, NUCL_PER_WEIGHT,
-                          START_CODON, END_CODON)
+                          (START_CODON, END_CODON), SYMBOLS)
         codons, PRETTY_GENOME_STRING = extract_codons(g, TGT_SIZE,
-                                                      START_CODON, END_CODON)
+                                                      (START_CODON, END_CODON))
         net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
                                   neur_per_hid=NEUR_HID_LAYER)
-        POPULATION.append(g)
-        NETS.append(net)
-        CODON_LIST.append(codons)
-        PRETTY_GENOME_LIST.append(PRETTY_GENOME_STRING)
+        #Evaluate initial population
+        fitness = evaluate(net, PROBLEM_DB, LABEL_DB, nb_instances=DB_SIZE)
+        #POPULATION.append((g, fitness, codons, PRETTY_GENOME_STRING, net))
+        individual = (g, fitness, codons, PRETTY_GENOME_STRING, net)
+        POPULATION[i] = individual
+        assert codons ==\
+            extract_codons(g, TGT_SIZE, (START_CODON, END_CODON))[0],\
+            "Wrong first"
 
-    CODON_LOG = []
-    CODON_LOG.append(CODON_LIST)
-    FITNESS_POPULATION = [0.0] * MU
+    POPULATION_LOG = []
+    POPULATION_LOG.append(POPULATION)
+
     ITERATION = 0
-    #Evaluate initial population
-    for i, net in enumerate(NETS):
-        FITNESS_POPULATION[i] = evaluate(net, PROBLEM_DB, LABEL_DB,
-                                         nb_instances=DB_SIZE)
-    FITNESS_LOG = []
-    FITNESS_LOG.append(FITNESS_POPULATION)
+
     TIME_GEN_LOG = []
-    NB_OF_CODONS_LOG = []
+
     #Total Time
     TIME_START = time.time()
-    sys.stdout.write(str(ITERATION) + " - ")
+
+    sys.stdout.write(str(ITERATION))
 
     #Evolutionary loop
     for ITERATION in xrange(1, NB_GENERATIONS + 1):
         #Time per generation
         time_gen_start = time.time()
         #Select lambda (possibly repeated) parents  with rank-based selection
-        parents = select(FITNESS_POPULATION, LAMBDA)
+        fitness_population = [f for _, f, _, _, _ in POPULATION]
 
-        children = []
-        codons_children = []
-        pretty_genomes_children = []
-        nets_children = []
+        parents = select(POPULATION, LAMBDA)
+
+        children = [("", 0.0, [], "", None)] * LAMBDA
+
         #Generate lambda children by mutating lambda selected parents
         #(rank-based mutation)
         #look for disruptive mutations (e.g. by measuring valid codons)
         #Note: it is easier to break a link gene than creating a new one
-        for i in parents:
-            child = mutate(POPULATION[i])
-            codons, PRETTY_GENOME_STRING = extract_codons(child, TGT_SIZE,
-                                                          START_CODON,
-                                                          END_CODON)
+        for index, i in enumerate(parents):
+            PRETTY_GENOME_STRING = ""
+            codons = []
+
+            child = mutate(i[0][:])
+            codons, PRETTY_GENOME_STRING = extract_codons(child[:], TGT_SIZE,
+                                                          (START_CODON,
+                                                           END_CODON))
             net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
                                       neur_per_hid=NEUR_HID_LAYER)
-            children.append(child)
-            nets_children.append(net)
-            codons_children.append(codons)
-            pretty_genomes_children.append(PRETTY_GENOME_STRING)
+            #Evaluate children
+            fitness = evaluate(net, PROBLEM_DB, LABEL_DB, nb_instances=DB_SIZE)
 
-        fitness_children = [0.0] * LAMBDA
-        #Evaluate children
-        for i, net in enumerate(nets_children):
-            fitness_children[i] = evaluate(net, PROBLEM_DB, LABEL_DB,
-                                           nb_instances=DB_SIZE)
+            individual = (child[:], fitness, codons, PRETTY_GENOME_STRING, net)
+            children[index] = individual
+
+        i = 0
+        indiv = None
+        for i, indiv in enumerate(children):
+            assert children[i][2] == \
+                extract_codons(children[i][0], TGT_SIZE,
+                               (START_CODON, END_CODON))[0],\
+                "Wrong at index (" + str(i) + ") of children:\n" +\
+                str(children[i][2]) + "\nExtracted: \n" +\
+                "".join(children[i][0]) + "\n" +\
+                str(extract_codons(children[i][0], TGT_SIZE,
+                                   (START_CODON, END_CODON))[0])
+        fitness_children = [f for _, f, _, _, _ in children]
+        full_population = (POPULATION + children)
 
         #Truncation "plus" survivor sel./replacement [parents + children]
-        survivors_idx = survive(FITNESS_POPULATION + fitness_children, MU)
-        print "All Genomes"
-        for index, g in enumerate(POPULATION + children):
-            print "Genome ", index, ":"
-            print extract_codons(g, TGT_SIZE, START_CODON, END_CODON)[1]
-            print "_____________________________________"
-        genomes_sel = [(POPULATION + children)[k] for k in survivors_idx]
-        fitness_sel = [(FITNESS_POPULATION + fitness_children)[k]
-                       for k in survivors_idx]
-        nets_sel = [(NETS + nets_children)[k] for k in survivors_idx]
-        codons_sel = [(CODON_LIST + codons_children)[k] for k in survivors_idx]
-        pretty_genomes_sel = [(PRETTY_GENOME_LIST + pretty_genomes_children)[k]
-                              for k in survivors_idx]
-        print survivors_idx
-        print "Fitness pop:"
-        print FITNESS_POPULATION
-        print "Fitness child"
-        print fitness_children
-        print "Fitness sel:"
-        print fitness_sel
-        codons_test = []
-        are_codons_equal = []
-        for i, g in enumerate(genomes_sel):
-            codons_test.append(extract_codons(g, TGT_SIZE, START_CODON,
-                                              END_CODON)[0])
-            are_codons_equal.append(codons_test[i] == codons_sel[i])
+        #survivors_idx = survive([f for _, f, _, _, _ in full_population], MU)
+        surviving_individuals = survive(full_population, MU)
 
-        print "Equal codons: ", are_codons_equal
-        for i, cod in enumerate(codons_sel):
-            if not are_codons_equal[i]:
-                print "\nUnconsistent codons, idx: ", i
-                print cod
-                print "Codons sel:"
-                print pretty_genomes_sel[i]
-                print codons_test[i]
-                #print "".join(POPULATION[i])
-                print "Codons extract:"
-                print extract_codons(POPULATION[i], TGT_SIZE, START_CODON,
-                                     END_CODON)[1]
-        fitReEval = [0.0] * MU
-        for k, g in enumerate(genomes_sel):
-            codons, PRETTY_GENOME_STRING = extract_codons(g, TGT_SIZE,
-                                                          START_CODON,
-                                                          END_CODON)
-            net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
-                                      neur_per_hid=NEUR_HID_LAYER)
-            fitReEval[k] = evaluate(net, PROBLEM_DB, LABEL_DB,
-                                    nb_instances=DB_SIZE)
+        for i, indiv in enumerate(full_population):
+            assert indiv[2] == \
+                extract_codons(indiv[0], TGT_SIZE,
+                               (START_CODON, END_CODON))[0],\
+                "Wrong at index (" + str(i) + ") of full pop:\n" +\
+                str(indiv[2]) + "\nExtracted: \n" + "".join(indiv[0]) + "\n" +\
+                str(extract_codons(indiv[0], TGT_SIZE,
+                                   (START_CODON, END_CODON))[0])
 
-        FITNESS_POPULATION = fitness_sel
-        CODON_LIST = codons_sel
-        CODON_LOG.append(CODON_LIST)
-        NETS = nets_sel
-        PRETTY_GENOME_LIST = pretty_genomes_sel
-        POPULATION = genomes_sel
-        #print
-        #print FITNESS_POPULATION
-        #print
-        #print fitReEval
-        #print FITNESS_POPULATION == fitReEval
+        POPULATION = [("", 0.0, [], "", None)] * MU
 
-        #For codon counting only
-        nb_codons = []
-        for genome_string in POPULATION:
-            codons, PRETTY_GENOME_STRING = extract_codons(genome_string,
-                                                          TGT_SIZE,
-                                                          START_CODON,
-                                                          END_CODON)
-            nb_codons.append(len(codons))
-        NB_OF_CODONS_LOG.append(nb_codons)
+        for index, individual in enumerate(surviving_individuals):
+            POPULATION[index] = individual
+        population_sel = []
+        POPULATION_LOG.append(POPULATION)
+
         #Logging operations at the end of generation
-        sys.stdout.write(str(ITERATION) + " - ")
-        FITNESS_LOG.append(FITNESS_POPULATION)
+        sys.stdout.write(" - " + str(ITERATION))
         time_gen_end = time.time()
         TIME_GEN_LOG.append([time_gen_end - time_gen_start])
+        #transfer to next task
 
 ###############################################################################
     if VERBOSE:
@@ -764,19 +792,24 @@ if __name__ == "__main__":
         print "For mu = ", str(MU), ", lambda = ", str(LAMBDA), \
             ", number of generations = ", NB_GENERATIONS, ", problem = ",\
             PROBLEM_ID
-        print "\nFitness through generations ( -error )"
+        print "\nFitness through generations (1 - error)"
+        FITNESS_LOG = [[f for _, f, _, _, _ in generation]
+                       for generation in POPULATION_LOG]
         plot.draw_data([["Test", [list(x) for x in zip(*FITNESS_LOG)]]])
         print "Number of codons (of the mu survirving individuals) \
                                                                 per generation"
-        plot.draw_data([["Codons", [list(x) for x in zip(*NB_OF_CODONS_LOG)]]])
+        NB_CODONS_LOG = [[len(individual[2])for individual in generation]
+                         for generation in POPULATION_LOG]
+        plot.draw_data([["Codons",
+                         [list(x) for x in zip(*NB_CODONS_LOG)]]])
 
 ###############################################################################
         #Test (& generalization if tested on more instances)
         NETS_POPULATION = []
         for g in POPULATION:
-            codons, PRETTY_GENOME_STRING = extract_codons(g, TGT_SIZE,
-                                                          START_CODON,
-                                                          END_CODON)
+            codons, PRETTY_GENOME_STRING = extract_codons(g[0], TGT_SIZE,
+                                                          (START_CODON,
+                                                           END_CODON))
             net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
                                       neur_per_hid=NEUR_HID_LAYER)
             NETS_POPULATION.append(net)
