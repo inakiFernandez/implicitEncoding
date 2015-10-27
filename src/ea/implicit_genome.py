@@ -19,7 +19,7 @@ import colorama as clr
 import exceptions as exc
 import brewer2mpl
 from pylab import subplot2grid
-import ea.load_classif_image as classif
+import load_classif_image as classif
 #import parse; import difflib
 
 
@@ -636,153 +636,158 @@ if __name__ == "__main__":
         N_LINKS = N_IN * NEUR_HID_LAYER + (N_HID - 1) * NEUR_HID_LAYER**2 +\
             NEUR_HID_LAYER * N_OUT
     TGT_SIZE = int(math.ceil(max(1, math.log(N_LINKS, len(SYMBOLS)))))
-    #print "TARGET_SIZE: ", TGT_SIZE
-###############################################################################
-    PROBLEM_DB = []
-    LABEL_DB = []
-    PROBLEM_SIZE = N_IN
-    DB_SIZE = -1  # dbSz = -1 for whole problem
-    TASK_SEQUENCE = ["t1.png", "t2.png", "t3.png", "t4.png", "t5.png"]
-    # "RETAND" "MIN", "AND", "OR", "MAJ", "RETOR" "IMG"
-    PROBLEM_ID = "IMG"
-    if PROBLEM_ID != "IMG":
-        PROBLEM_ID = TASK_SEQUENCE[0]
-    else:
-        IMG_FILENAME = TASK_SEQUENCE[0]
-
-    if PROBLEM_ID == "IMG":
-        IMG = load_img(IMG_FILENAME)
-        PROBLEM_DB = [[y / float(IMG[1]), x / float(IMG[0])]
-                      for y in xrange(IMG[1]) for x in xrange(IMG[0])]
-        LABEL_DB = [x / 255 for x in IMG[2]]
-        NB_INSTANCES = IMG[0] * IMG[1] / 10
-    else:
-        #Generate all instances
-        for i in xrange(len(SYMBOLS)**PROBLEM_SIZE):
-            #binary in this case, different base for other symbol sets
-            input_vector = [float(k) for k in
-                            list(("{0:0%sb}" % str(PROBLEM_SIZE)).format(i))]
-            PROBLEM_DB.append(input_vector)
-            LABEL_DB.append(task(input_vector, PROBLEM_ID, IMG))
-    #print PROBLEM_DB
-    #print LABEL_DB
-    print NB_INSTANCES
-
-###############################################################################
-###############################################################################
-##########################Evolutionary algorithm###############################
-    MU = 5
-    NB_GENERATIONS = 15
+#############################Evolutionary parameters###########################
+    MU = 2
+    NB_GENERATIONS = 2
     PARENT_CHILDREN_RATIO = 1.0  # number of children per parent
     # selectionRatio * mu == lambda nb of children
     LAMBDA = int(round(MU * PARENT_CHILDREN_RATIO))
     #mu parents in the beginning and lbda children every generation
-    POPULATION = []
+
+###############################################################################
+    PROBLEM_DB = []
+    LABEL_DB = []
+    PROBLEM_SIZE = N_IN
+    DB_SIZE = -1  # -1 for whole problem
+    TASK_SEQUENCE = ["t1.png", "t2.png"]  # , "t3.png", "t4.png", "t5.png"]
+    # "RETAND" "MIN", "AND", "OR", "MAJ", "RETOR" "IMG"
+    PROBLEM_ID = "IMG"
+
+###############################################################################
+###############################################################################
+##########################Evolutionary algorithm###############################
+    INTERTASK_LOG = []
     POPULATION = [("", 0.0, [], "", None)] * MU
-
-    PRETTY_GENOME_STRING = ""
-
-    #Initial population: mu individuals
-    #Valid ones (all random links correctly encoded) OR random binary string
+    POPULATION_LOG = []
+    #Initial genomes in population: mu individuals, valid ones
+    #(all random links correctly encoded) OR random binary string
     for i in xrange(MU):
         g = create_genome(N_LINKS, FRAC_JUNK_GENES, NUCL_PER_WEIGHT,
                           (START_CODON, END_CODON), SYMBOLS)
         codons, PRETTY_GENOME_STRING = extract_codons(g, TGT_SIZE,
-                                                      (START_CODON, END_CODON))
+                                                      (START_CODON,
+                                                       END_CODON))
         net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
                                   neur_per_hid=NEUR_HID_LAYER)
-        #Evaluate initial population
-        fitness = evaluate(net, PROBLEM_DB, LABEL_DB, nb_instances=DB_SIZE)
-        #POPULATION.append((g, fitness, codons, PRETTY_GENOME_STRING, net))
-        individual = (g, fitness, codons, PRETTY_GENOME_STRING, net)
+        individual = (g, 0.0, codons, PRETTY_GENOME_STRING, net)
         POPULATION[i] = individual
-        assert codons ==\
-            extract_codons(g, TGT_SIZE, (START_CODON, END_CODON))[0],\
-            "Wrong first"
 
-    POPULATION_LOG = []
-    POPULATION_LOG.append(POPULATION)
+###############################################################################
+    for each_task in TASK_SEQUENCE:
+        print "Learning task: ", each_task
+        #Generate full problem
+        if PROBLEM_ID == "IMG":
+            IMG_FILENAME = each_task
+            IMG = load_img(IMG_FILENAME)
+            PROBLEM_DB = [[y / float(IMG[1]), x / float(IMG[0])]
+                          for y in xrange(IMG[1]) for x in xrange(IMG[0])]
+            LABEL_DB = [x / 255 for x in IMG[2]]
+            TOTAL_INSTANCES = IMG[0] * IMG[1]
+            # keep always same instances(todo)
+        else:
+            #Generate all instances
+            TOTAL_INSTANCES = len(SYMBOLS)**PROBLEM_SIZE
+            for i in xrange(TOTAL_INSTANCES):
+                #binary in this case, different base for other symbol sets
+                input_vector = [float(k) for k in
+                                list(("{0:0%sb}" %
+                                      str(PROBLEM_SIZE)).format(i))]
+                PROBLEM_DB.append(input_vector)
+                LABEL_DB.append(task(input_vector, each_task))
 
-    ITERATION = 0
+        INSTANCES_DB = []
+        LABEL_INST_DB = []
 
-    TIME_GEN_LOG = []
+        if DB_SIZE != -1:
+            index_instances = np.random.choice(xrange(TOTAL_INSTANCES),
+                                               DB_SIZE, replace=False)
+            INSTANCES_DB.append([PROBLEM_DB[i] for i in index_instances])
+            LABEL_INST_DB.append([LABEL_DB[i] for i in index_instances])
+        else:
+            INSTANCES_DB = PROBLEM_DB[:]
+            LABEL_INST_DB = LABEL_DB[:]
 
-    #Total Time
-    TIME_START = time.time()
+        TIME_GEN_LOG = []
+        #Total Time
+        TIME_START = time.time()
 
-    sys.stdout.write(str(ITERATION))
+        PRETTY_GENOME_STRING = ""
 
-    #Evolutionary loop
-    for ITERATION in xrange(1, NB_GENERATIONS + 1):
-        #Time per generation
-        time_gen_start = time.time()
-        #Select lambda (possibly repeated) parents  with rank-based selection
-        fitness_population = [f for _, f, _, _, _ in POPULATION]
+        #Initial population: mu individuals, valid ones
+        #(all random links correctly encoded) OR random binary string
+        for i in xrange(MU):
+            net = POPULATION[i][4]
+            #Evaluate initial population
+            fitness = evaluate(net, INSTANCES_DB, LABEL_INST_DB)
+            POPULATION[i] = (POPULATION[i][0], fitness, POPULATION[i][2],
+                             POPULATION[i][3], POPULATION[i][4])
 
-        parents = select(POPULATION, LAMBDA)
+        POPULATION_LOG.append(POPULATION)
 
-        children = [("", 0.0, [], "", None)] * LAMBDA
+        ITERATION = 0
+        sys.stdout.write(str(ITERATION))
 
-        #Generate lambda children by mutating lambda selected parents
-        #(rank-based mutation)
-        #look for disruptive mutations (e.g. by measuring valid codons)
-        #Note: it is easier to break a link gene than creating a new one
-        for index, i in enumerate(parents):
-            PRETTY_GENOME_STRING = ""
-            codons = []
+        #Evolutionary loop
+        for ITERATION in xrange(1, NB_GENERATIONS + 1):
+            #Time per generation
+            time_gen_start = time.time()
+            #Select lambda (possibly repeated) parents, rank-based
+            parents = select(POPULATION, LAMBDA)
 
-            child = mutate(i[0][:])
-            codons, PRETTY_GENOME_STRING = extract_codons(child[:], TGT_SIZE,
+            children = [("", 0.0, [], "", None)] * LAMBDA
+
+            #Generate lambda children by mutating lambda selected parents
+            #Look for disruptive mutations (e.g. by measuring valid codons)
+            #Note: it is easier to break a link gene than creating a new one
+            for index, i in enumerate(parents):
+                child = mutate(i[0][:])
+                codons, PRETTY_GENOME_STRING = extract_codons(child[:],
+                                                              TGT_SIZE,
+                                                              (START_CODON,
+                                                               END_CODON))
+                net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
+                                          neur_per_hid=NEUR_HID_LAYER)
+                #Evaluate children
+                fitness = evaluate(net, INSTANCES_DB, LABEL_INST_DB)
+                individual = (child[:], fitness, codons, PRETTY_GENOME_STRING,
+                              net)
+                children[index] = individual
+
+            full_population = (POPULATION + children)
+            #Truncation "plus" survivor sel./replacement [parents + children]
+            surviving_individuals = survive(full_population, MU)
+
+            POPULATION = [("", 0.0, [], "", None)] * MU
+            for index, individual in enumerate(surviving_individuals):
+                POPULATION[index] = individual
+
+            POPULATION_LOG.append(POPULATION)
+
+            #Logging operations at the end of generation
+            sys.stdout.write(" - " + str(ITERATION))
+            time_gen_end = time.time()
+            TIME_GEN_LOG.append([time_gen_end - time_gen_start])
+
+        #transfer to next task: best individual
+        max_fitness = POPULATION[0][1]
+        best_individual = POPULATION[0]
+        for individual in POPULATION:
+            if individual[1] > max_fitness:
+                max_fitness = individual[1]
+                best_individual = individual
+        #Initialize population with mutated copies of best_individual
+        for index in xrange(MU):
+            altered_copy = mutate(best_individual[0][:])
+            codons, PRETTY_GENOME_STRING = extract_codons(g, TGT_SIZE,
                                                           (START_CODON,
                                                            END_CODON))
             net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
                                       neur_per_hid=NEUR_HID_LAYER)
-            #Evaluate children
-            fitness = evaluate(net, PROBLEM_DB, LABEL_DB, nb_instances=DB_SIZE)
-
-            individual = (child[:], fitness, codons, PRETTY_GENOME_STRING, net)
-            children[index] = individual
-
-        i = 0
-        indiv = None
-        for i, indiv in enumerate(children):
-            assert children[i][2] == \
-                extract_codons(children[i][0], TGT_SIZE,
-                               (START_CODON, END_CODON))[0],\
-                "Wrong at index (" + str(i) + ") of children:\n" +\
-                str(children[i][2]) + "\nExtracted: \n" +\
-                "".join(children[i][0]) + "\n" +\
-                str(extract_codons(children[i][0], TGT_SIZE,
-                                   (START_CODON, END_CODON))[0])
-        fitness_children = [f for _, f, _, _, _ in children]
-        full_population = (POPULATION + children)
-
-        #Truncation "plus" survivor sel./replacement [parents + children]
-        #survivors_idx = survive([f for _, f, _, _, _ in full_population], MU)
-        surviving_individuals = survive(full_population, MU)
-
-        for i, indiv in enumerate(full_population):
-            assert indiv[2] == \
-                extract_codons(indiv[0], TGT_SIZE,
-                               (START_CODON, END_CODON))[0],\
-                "Wrong at index (" + str(i) + ") of full pop:\n" +\
-                str(indiv[2]) + "\nExtracted: \n" + "".join(indiv[0]) + "\n" +\
-                str(extract_codons(indiv[0], TGT_SIZE,
-                                   (START_CODON, END_CODON))[0])
-
-        POPULATION = [("", 0.0, [], "", None)] * MU
-
-        for index, individual in enumerate(surviving_individuals):
+            individual = (altered_copy, 0.0, codons, PRETTY_GENOME_STRING, net)
             POPULATION[index] = individual
-        population_sel = []
-        POPULATION_LOG.append(POPULATION)
 
-        #Logging operations at the end of generation
-        sys.stdout.write(" - " + str(ITERATION))
-        time_gen_end = time.time()
-        TIME_GEN_LOG.append([time_gen_end - time_gen_start])
-        #transfer to next task
-
+        INTERTASK_LOG.append(POPULATION_LOG)
+        print
 ###############################################################################
     if VERBOSE:
         TIME_END = time.time()
@@ -798,7 +803,7 @@ if __name__ == "__main__":
         plot.draw_data([["Test", [list(x) for x in zip(*FITNESS_LOG)]]])
         print "Number of codons (of the mu survirving individuals) \
                                                                 per generation"
-        NB_CODONS_LOG = [[len(individual[2])for individual in generation]
+        NB_CODONS_LOG = [[len(indiv[2]) for indiv in generation]
                          for generation in POPULATION_LOG]
         plot.draw_data([["Codons",
                          [list(x) for x in zip(*NB_CODONS_LOG)]]])
