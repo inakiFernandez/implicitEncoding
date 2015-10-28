@@ -21,6 +21,7 @@ import brewer2mpl
 from pylab import subplot2grid
 import load_classif_image as classif
 #import parse; import difflib
+import datetime
 
 
 class PrettyFloat(float):
@@ -37,6 +38,11 @@ class AutoVivification(dict):
         except KeyError:
             value = self[item] = type(self)()
             return value
+
+
+def format_float(value):
+    """Three digit print representation for floating numbers"""
+    return "%.3f" % value
 
 
 def map_config(section):
@@ -513,10 +519,10 @@ def mutate(genome):
     First, copy, move or delete a random fragment of the genome at random pos.
     Second, bit-flip for each bit of the genome with small probability"""
     #0.12; 0.12; 0.12; 0.01 MIN
-    p_frag_copy = 0.25
-    p_frag_move = 0.30
-    p_frag_del = 0.25
-    p_bit_flip = 0.03  # pGeneIns=
+    p_frag_copy = 0.05
+    p_frag_move = 0.05
+    p_frag_del = 0.05
+    p_bit_flip = 0.01
 
     muts = {0: frag_copy,
             1: frag_move,
@@ -550,11 +556,7 @@ def evaluate(ind, problem_db, lbl_db, nb_instances=-1):
         answers = [lbl_db[instance] for instance in idx_instances]
 
     for idx, inp in enumerate(instances):
-        #print inp
-        #print answers[idx]
         nn_answer = ind.activate(inp)
-        #print nn_answer
-        #print
         #Error on each instance (euclidian distance to right answer)
         #is normalized between 0 and 1
         error = np.linalg.norm(np.subtract(nn_answer, answers[idx])) / \
@@ -601,10 +603,14 @@ if __name__ == "__main__":
     PARSER = ConfigParser.ConfigParser()
     PARSER.read(CONFIG)
     PARAMS = AutoVivification()
-    VERBOSE = False
+    VERBOSE = True
 
     for s in PARSER.sections():
         PARAMS[s] = map_config(s)
+    print PARAMS
+    sys.exit("")
+    LOG_FILENAME = "logs/fitness_" + str(datetime.datetime.now()) + ".log"
+    LOG_FILE = open(LOG_FILENAME, 'w')
 ###############################################################################
     N_OUT = 1  # One output for logical binary output
     N_IN = 2  # 8 for retina pb
@@ -629,7 +635,7 @@ if __name__ == "__main__":
     END_CODON = "010110101100"
     #START_CODON = "11010"
     #END_CODON = "00110"
-
+    PLEIOTROPY = True
     if N_HID == 0:
         N_LINKS = N_IN * N_OUT
     else:
@@ -637,8 +643,8 @@ if __name__ == "__main__":
             NEUR_HID_LAYER * N_OUT
     TGT_SIZE = int(math.ceil(max(1, math.log(N_LINKS, len(SYMBOLS)))))
 #############################Evolutionary parameters###########################
-    MU = 2
-    NB_GENERATIONS = 2
+    MU = 10
+    NB_GENERATIONS = 15
     PARENT_CHILDREN_RATIO = 1.0  # number of children per parent
     # selectionRatio * mu == lambda nb of children
     LAMBDA = int(round(MU * PARENT_CHILDREN_RATIO))
@@ -649,31 +655,36 @@ if __name__ == "__main__":
     LABEL_DB = []
     PROBLEM_SIZE = N_IN
     DB_SIZE = -1  # -1 for whole problem
-    TASK_SEQUENCE = ["t1.png", "t2.png"]  # , "t3.png", "t4.png", "t5.png"]
-    # "RETAND" "MIN", "AND", "OR", "MAJ", "RETOR" "IMG"
-    PROBLEM_ID = "IMG"
+    TASK_SEQUENCE = ["t1.png", "t2.png"]
+    # , "t3.png"]  # , "t4.png", "t5.png"]
 
+    PROBLEM_ID = "IMG"
+    # "RETAND" "MIN", "AND", "OR", "MAJ", "RETOR" "IMG"
 ###############################################################################
 ###############################################################################
 ##########################Evolutionary algorithm###############################
     INTERTASK_LOG = []
     POPULATION = [("", 0.0, [], "", None)] * MU
-    POPULATION_LOG = []
+
     #Initial genomes in population: mu individuals, valid ones
-    #(all random links correctly encoded) OR random binary string
+    #(all random links correctly encoded)
     for i in xrange(MU):
         g = create_genome(N_LINKS, FRAC_JUNK_GENES, NUCL_PER_WEIGHT,
                           (START_CODON, END_CODON), SYMBOLS)
         codons, PRETTY_GENOME_STRING = extract_codons(g, TGT_SIZE,
                                                       (START_CODON,
-                                                       END_CODON))
+                                                       END_CODON),
+                                                      pleio=PLEIOTROPY)
         net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
                                   neur_per_hid=NEUR_HID_LAYER)
         individual = (g, 0.0, codons, PRETTY_GENOME_STRING, net)
         POPULATION[i] = individual
 
 ###############################################################################
+    #Total Time
+    TIME_START = time.time()
     for each_task in TASK_SEQUENCE:
+        POPULATION_LOG = []
         print "Learning task: ", each_task
         #Generate full problem
         if PROBLEM_ID == "IMG":
@@ -708,8 +719,6 @@ if __name__ == "__main__":
             LABEL_INST_DB = LABEL_DB[:]
 
         TIME_GEN_LOG = []
-        #Total Time
-        TIME_START = time.time()
 
         PRETTY_GENOME_STRING = ""
 
@@ -744,7 +753,8 @@ if __name__ == "__main__":
                 codons, PRETTY_GENOME_STRING = extract_codons(child[:],
                                                               TGT_SIZE,
                                                               (START_CODON,
-                                                               END_CODON))
+                                                               END_CODON),
+                                                              pleio=PLEIOTROPY)
                 net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
                                           neur_per_hid=NEUR_HID_LAYER)
                 #Evaluate children
@@ -768,6 +778,10 @@ if __name__ == "__main__":
             time_gen_end = time.time()
             TIME_GEN_LOG.append([time_gen_end - time_gen_start])
 
+        INTERTASK_LOG.append(POPULATION_LOG)
+        formatted_fitness = [[format_float(indiv[1]) for indiv in generation]
+                             for generation in POPULATION_LOG]
+        LOG_FILE.write(str(formatted_fitness) + "\n")
         #transfer to next task: best individual
         max_fitness = POPULATION[0][1]
         best_individual = POPULATION[0]
@@ -775,20 +789,24 @@ if __name__ == "__main__":
             if individual[1] > max_fitness:
                 max_fitness = individual[1]
                 best_individual = individual
-        #Initialize population with mutated copies of best_individual
-        for index in xrange(MU):
-            altered_copy = mutate(best_individual[0][:])
-            codons, PRETTY_GENOME_STRING = extract_codons(g, TGT_SIZE,
-                                                          (START_CODON,
-                                                           END_CODON))
-            net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
-                                      neur_per_hid=NEUR_HID_LAYER)
-            individual = (altered_copy, 0.0, codons, PRETTY_GENOME_STRING, net)
-            POPULATION[index] = individual
+        #If there is a following task, i.e. current is not last task
+        if each_task != TASK_SEQUENCE[-1]:
+            #Initialize population with mutated copies of best_individual
+            for index in xrange(MU):
+                altered_copy = mutate(best_individual[0][:])
+                codons, PRETTY_GENOME_STRING = extract_codons(g, TGT_SIZE,
+                                                              (START_CODON,
+                                                               END_CODON),
+                                                              pleio=PLEIOTROPY)
+                net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
+                                          neur_per_hid=NEUR_HID_LAYER)
+                individual = (altered_copy, 0.0, codons,
+                              PRETTY_GENOME_STRING, net)
+                POPULATION[index] = individual
 
-        INTERTASK_LOG.append(POPULATION_LOG)
         print
 ###############################################################################
+    LOG_FILE.close()
     if VERBOSE:
         TIME_END = time.time()
         print "\nIt took: ", str(TIME_END - TIME_START), " seconds"
@@ -814,7 +832,8 @@ if __name__ == "__main__":
         for g in POPULATION:
             codons, PRETTY_GENOME_STRING = extract_codons(g[0], TGT_SIZE,
                                                           (START_CODON,
-                                                           END_CODON))
+                                                           END_CODON),
+                                                          pleio=PLEIOTROPY)
             net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
                                       neur_per_hid=NEUR_HID_LAYER)
             NETS_POPULATION.append(net)
