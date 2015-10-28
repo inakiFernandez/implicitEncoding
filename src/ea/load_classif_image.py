@@ -8,7 +8,7 @@ import png
 import sys
 
 
-def read_image(name, folder="../../../image_db"):
+def read_image(name, folder="../../image_db"):
     r = png.Reader(folder + '/' + name)
     f = r.asDirect()
 
