@@ -60,5 +60,4 @@ target/
 .spyderproject
 .spyderworkspace
 diag.xmi
-src/plots/
 src/test
