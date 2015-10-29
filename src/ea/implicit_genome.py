@@ -20,7 +20,6 @@ import exceptions as exc
 import brewer2mpl
 from pylab import subplot2grid
 import load_classif_image as classif
-#import parse; import difflib
 import datetime
 
 
@@ -41,8 +40,8 @@ class AutoVivification(dict):
 
 
 def format_float(value):
-    """Three digit print representation for floating numbers"""
-    return "%.3f" % value
+    """Four digit print representation for floating numbers"""
+    return "%.4f" % value
 
 
 def map_config(section):
@@ -599,23 +598,28 @@ def survive(population, mu_nb_par):
 
 if __name__ == "__main__":
     clr.init()
-    CONFIG = "config.ini"
+    CONFIG = sys.argv[1]  # "config.ini"
     PARSER = ConfigParser.ConfigParser()
     PARSER.read(CONFIG)
     PARAMS = AutoVivification()
-    VERBOSE = True
+    VERBOSE = bool(CONFIG['EA']['verbose'])  # True
 
     for s in PARSER.sections():
         PARAMS[s] = map_config(s)
-    print PARAMS
-    sys.exit("")
-    LOG_FILENAME = "logs/fitness_" + str(datetime.datetime.now()) + ".log"
+
+    task_sequence_list = PARAMS["Task"]["tasksequence"].split(",")
+
+    LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] +\
+        "/fitness_" + str(datetime.datetime.now()).replace(" ", "-") + ".log"
     LOG_FILE = open(LOG_FILENAME, 'w')
+    NN_LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] +\
+        "/neural_" + str(datetime.datetime.now()).replace(" ", "-") + ".log"
+    NN_LOG_FILE = open(NN_LOG_FILENAME, 'w')
 ###############################################################################
     N_OUT = 1  # One output for logical binary output
     N_IN = 2  # 8 for retina pb
-    N_HID = 1
-    NEUR_HID_LAYER = 2
+    N_HID = int(PARAMS['NN']['nhidlay'])  # 1
+    NEUR_HID_LAYER = int(PARAMS['NN']['neurperlay'])  # 2
     #Proportion of junk genes in-between genes on initialization of the genome
     FRAC_JUNK_GENES = 0.0
     SYMBOLS = ['0', '1']
@@ -631,8 +635,8 @@ if __name__ == "__main__":
     #END_CODON = "101011101101101100001111"
     #START_CODON = "111010010100"
     #END_CODON = "010100011011"
-    START_CODON = "101001010011"
-    END_CODON = "010110101100"
+    START_CODON = PARAMS['Encoding']['start']  # "101001010011"
+    END_CODON = PARAMS['Encoding']['end']  # "010110101100"
     #START_CODON = "11010"
     #END_CODON = "00110"
     PLEIOTROPY = True
@@ -643,9 +647,10 @@ if __name__ == "__main__":
             NEUR_HID_LAYER * N_OUT
     TGT_SIZE = int(math.ceil(max(1, math.log(N_LINKS, len(SYMBOLS)))))
 #############################Evolutionary parameters###########################
-    MU = 10
-    NB_GENERATIONS = 15
-    PARENT_CHILDREN_RATIO = 1.0  # number of children per parent
+    MU = int(PARAMS['EA']['mu'])  # 10
+    NB_GENERATIONS = int(PARAMS['EA']['generations'])  # 15
+    # number of children per parent
+    PARENT_CHILDREN_RATIO = float(PARAMS['EA']['lambdapermu'])  # 1.0
     # selectionRatio * mu == lambda nb of children
     LAMBDA = int(round(MU * PARENT_CHILDREN_RATIO))
     #mu parents in the beginning and lbda children every generation
@@ -655,10 +660,10 @@ if __name__ == "__main__":
     LABEL_DB = []
     PROBLEM_SIZE = N_IN
     DB_SIZE = -1  # -1 for whole problem
-    TASK_SEQUENCE = ["t1.png", "t2.png"]
+    TASK_SEQUENCE = task_sequence_list  # ["t1.png", "t2.png"]
     # , "t3.png"]  # , "t4.png", "t5.png"]
 
-    PROBLEM_ID = "IMG"
+    PROBLEM_ID = PARAMS['Task']['problemid']  # "IMG"
     # "RETAND" "MIN", "AND", "OR", "MAJ", "RETOR" "IMG"
 ###############################################################################
 ###############################################################################
@@ -789,6 +794,8 @@ if __name__ == "__main__":
             if individual[1] > max_fitness:
                 max_fitness = individual[1]
                 best_individual = individual
+        NN_LOG_FILE.write(each_task + "\n" + "".join(best_individual[0]) +
+                          "\n" + str(format_float(best_individual[1])))
         #If there is a following task, i.e. current is not last task
         if each_task != TASK_SEQUENCE[-1]:
             #Initialize population with mutated copies of best_individual
@@ -807,6 +814,8 @@ if __name__ == "__main__":
         print
 ###############################################################################
     LOG_FILE.close()
+    NN_LOG_FILE.close()
+
     if VERBOSE:
         TIME_END = time.time()
         print "\nIt took: ", str(TIME_END - TIME_START), " seconds"
