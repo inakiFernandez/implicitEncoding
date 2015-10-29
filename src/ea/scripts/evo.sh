@@ -9,7 +9,7 @@ if [ "$#" -lt 2 ] ; then
     echo $usage
     exit 1;
 fi
-
+mkdir logs
 params="$1";
 
 let "nbrun= $2";
