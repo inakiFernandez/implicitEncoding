@@ -602,11 +602,11 @@ if __name__ == "__main__":
     PARSER = ConfigParser.ConfigParser()
     PARSER.read(CONFIG)
     PARAMS = AutoVivification()
-    VERBOSE = bool(CONFIG['EA']['verbose'])  # True
 
     for s in PARSER.sections():
         PARAMS[s] = map_config(s)
 
+    VERBOSE = bool(PARAMS['EA']['verbose'])  # True
     task_sequence_list = PARAMS["Task"]["tasksequence"].split(",")
 
     LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] +\
