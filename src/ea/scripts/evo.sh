@@ -16,27 +16,31 @@ let "nbrun= $2";
 
 out_global_dir=`echo $1 | awk 'BEGIN { FS= "[/.]"} ; { print $2}';`;
 echo $out_global_dir
+rm -rf logs/$out_global_dir
 
-mkdir $out_global_dir;
+mkdir logs/$out_global_dir
 
 i=1
     while [ $i -le ${nbrun} ]; do
-	rm -rf logs/$out_global_dir
-	mkdir logs/$out_global_dir
-	python implicit_genome.py ${params}
-	
 	out_dir=`printf "out-%02d" $i`
 	rm -rf $out_dir
+	mkdir logs/$out_global_dir/$out_dir
+	python implicit_genome.py ${params} $out_dir
+	
+
         #gzip a faire plus tard dans le programme (mtn je peux pas -> experiences en route)
 	#penser a supprimer l affichage texte du simulateur
 	
-	mv logs/$out_global_dir "$out_global_dir/$out_dir"
+	#mv logs/$out_global_dir/$out_dir "$out_global_dir/$out_dir"
 	
 	i=$[i+1]
 
     done
 #gzip -r "$out_global_dir/$out_dir"
+
+mv logs/$out_global_dir $out_global_dir
 mkdir logs
+
 
 exit 0;
 

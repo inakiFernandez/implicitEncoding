@@ -599,6 +599,7 @@ def survive(population, mu_nb_par):
 if __name__ == "__main__":
     clr.init()
     CONFIG = sys.argv[1]  # "config.ini"
+    OUT_FOLDER = sys.argv[2]
     PARSER = ConfigParser.ConfigParser()
     PARSER.read(CONFIG)
     PARAMS = AutoVivification()
@@ -607,13 +608,16 @@ if __name__ == "__main__":
         PARAMS[s] = map_config(s)
 
     VERBOSE = bool(PARAMS['EA']['verbose'])  # True
+
     task_sequence_list = PARAMS["Task"]["tasksequence"].split(",")
 
-    LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] +\
-        "/fitness_" + str(datetime.datetime.now()).replace(" ", "-") + ".log"
+    LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] + "/" +\
+        OUT_FOLDER + "/fitness_" +\
+        str(datetime.datetime.now()).replace(" ", "-") + ".log"
     LOG_FILE = open(LOG_FILENAME, 'w')
-    NN_LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] +\
-        "/neural_" + str(datetime.datetime.now()).replace(" ", "-") + ".log"
+    NN_LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] + "/" +\
+        OUT_FOLDER + "/neural_" +\
+        str(datetime.datetime.now()).replace(" ", "-") + ".log"
     NN_LOG_FILE = open(NN_LOG_FILENAME, 'w')
 ###############################################################################
     N_OUT = 1  # One output for logical binary output
