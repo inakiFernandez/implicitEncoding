@@ -41,7 +41,7 @@ i=1
 #gzip -r "$out_global_dir/$out_dir"
 
 #mv $out_parallel_file $out_global_dir
-parallel -j 4 < $out_parallel_file
+parallel -j 8 < $out_parallel_file
 mv logs/$out_global_dir $out_global_dir
 
 mkdir logs
