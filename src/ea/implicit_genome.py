@@ -630,7 +630,7 @@ if __name__ == "__main__":
     SYMBOLS = ['0', '1']
     #Number of nucleotids for weight field on initialization
     #(the more nucleotids, the finer the resolution of initial weights)
-    NB_WEIGHT_VALUES = int(PARAMS['Encoding']['nbweightsvalues'])
+    NB_WEIGHT_VALUES = int(PARAMS['Encoding']['nweightsvalues'])
     NUCL_PER_WEIGHT = NB_WEIGHT_VALUES - 1
     #How to select start and end codons? Shorter (i.e. easier to randomly draw)
     #codons are more prone to disruptive variation? (are offspring viable?)
