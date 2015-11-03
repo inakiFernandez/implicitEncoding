@@ -620,8 +620,9 @@ if __name__ == "__main__":
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     NN_LOG_FILE = open(NN_LOG_FILENAME, 'w')
 ###############################################################################
-    N_OUT = 1  # One output for logical binary output
-    N_IN = 2  # 8 for retina pb
+    # 1 output for logical binary problems
+    N_OUT = int(PARAMS["Task"]["outputs"])
+    N_IN = int(PARAMS["Task"]["inputs"])  # 2  # 8 for retina pb
     N_HID = int(PARAMS['NN']['nhidlay'])  # 1
     NEUR_HID_LAYER = int(PARAMS['NN']['neurperlay'])  # 2
     #Proportion of junk genes in-between genes on initialization of the genome
@@ -629,7 +630,7 @@ if __name__ == "__main__":
     SYMBOLS = ['0', '1']
     #Number of nucleotids for weight field on initialization
     #(the more nucleotids, the finer the resolution of initial weights)
-    NB_WEIGHT_VALUES = 2
+    NB_WEIGHT_VALUES = int(PARAMS['Encoding']['nbweightsval'])
     NUCL_PER_WEIGHT = NB_WEIGHT_VALUES - 1
     #How to select start and end codons? Shorter (i.e. easier to randomly draw)
     #codons are more prone to disruptive variation? (are offspring viable?)
@@ -643,7 +644,7 @@ if __name__ == "__main__":
     END_CODON = PARAMS['Encoding']['end']  # "010110101100"
     #START_CODON = "11010"
     #END_CODON = "00110"
-    PLEIOTROPY = True
+    PLEIOTROPY = bool(PARAMS['Encoding']['pleio'])
     if N_HID == 0:
         N_LINKS = N_IN * N_OUT
     else:

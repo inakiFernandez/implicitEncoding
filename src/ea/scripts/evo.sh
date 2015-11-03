@@ -32,18 +32,18 @@ i=1
 
         #gzip a faire plus tard dans le programme (mtn je peux pas -> experiences en route)
 	#penser a supprimer l affichage texte du simulateur
-	
+
 	#mv logs/$out_global_dir/$out_dir "$out_global_dir/$out_dir"
-	
+
 	i=$[i+1]
 
     done
 #gzip -r "$out_global_dir/$out_dir"
 
-#mv $out_parallel_file $out_global_dir
+
 parallel -j 8 < $out_parallel_file
 mv logs/$out_global_dir $out_global_dir
-
+mv $out_parallel_file $out_global_dir
 mkdir logs
 
 
