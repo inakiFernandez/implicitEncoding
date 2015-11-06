@@ -290,6 +290,109 @@ def create_genome(nb_links, fraction_junk_genes, nucleotids_per_gene,
     return genome
 
 
+def map_to_mlp_light(codon_list, n_in, n_out, n_hidden=0, neur_per_hid=0,
+                     polygene_strategy="avg"):  # bias=False(?)
+    """Map a list of coding genes (codons) to a Multilayer Fully-connected
+    Perceptron with given inputs, outputs, number of hidden layers and neurons
+    per hidden layer. This is done in a (pybrain) per-layer basis to speed up.
+    The effect of multiple codons targeting the same connection is determined
+    by the polygene_strategy (average by default)"""
+    mapped_net = None
+    if n_hidden <= 0:
+        num_links = n_in * n_out
+    else:
+        num_links = n_in * neur_per_hid + neur_per_hid * n_out + \
+            (n_hidden - 1) * (neur_per_hid * neur_per_hid)
+    #Neurons' IDs starts counting from 0 in the sequence:
+    #Input - Bias - Output - (Hidden)
+    #Neuron IDs are fixed and topology does not evolve for now
+    #Link order : cf. below
+    #Recurrent NNs? evolution of topology?
+
+    mapped_net = FeedForwardNetwork()
+
+    mapped_net.addInputModule(LinearLayer(n_in, name="i"))
+
+    mapped_net.addOutputModule(SigmoidLayer(n_out, name="o"))
+    list_connections = []
+    for layer in xrange(n_hidden):
+        mapped_net.addModule(SigmoidLayer(neur_per_hid, name="h" + str(layer)))
+
+    if n_hidden == 0:
+        connection = FullConnection(mapped_net["i"], mapped_net["o"],
+                                    name="ci")
+        mapped_net.addConnection(connection)
+        number_connections = n_in * n_out
+        list_connections.append((connection, number_connections))
+    else:
+        connection = FullConnection(mapped_net["i"], mapped_net["h0"],
+                                    name="ci")
+        mapped_net.addConnection(connection)
+        number_connections = n_in * neur_per_hid
+        list_connections.append((connection, number_connections))
+        for layer in xrange(n_hidden - 1):
+            connection = FullConnection(mapped_net["h" + str(layer)],
+                                        mapped_net["h" + str(layer + 1)],
+                                        name="ch" + str(layer))
+            mapped_net.addConnection(connection)
+            number_connections = neur_per_hid * neur_per_hid
+            list_connections.append((connection, number_connections))
+
+        connection = FullConnection(mapped_net["h" + str(n_hidden - 1)],
+                                    mapped_net["o"], name=("ch" +
+                                                           str(n_hidden - 1)))
+        mapped_net.addConnection(connection)
+        number_connections = neur_per_hid * n_out
+        list_connections.append((connection, number_connections))
+
+    #[[Bias??]] if bias: b = BiasUnit(name = "b");  mapped_net.addModule(b)
+
+    #Loop link codons
+    #Link ordering:
+    #    No hidden layer:
+    #              0        1     ....
+    #           [i0,o0], [i1,o0], .... , [i0,o1], [i1,o1], ...., [iN,oN']
+    #   W. hidden layer(s):
+    #           [i0,h00],[i1,h00],...,[i0,h01],...
+    #           [h00,h10],[h01,h10],..., [hK0,o0], [hK1,o0],..., [hKN'',oN']
+    target_set = set(xrange(num_links))
+    grouped_codons = [[codon_id, [codon[1] for codon in codon_list
+                                  if codon[0] == codon_id]]
+                      for codon_id in target_set]
+    weights = []
+    #Loop over all possible link identifiers
+    for link in xrange(num_links):
+        #Retrieve the list of weights of codons pointing to current link
+        gene_weights = [codon[1] for codon
+                        in grouped_codons if codon[0] == link]
+        gene_weights = list(itertools.chain.from_iterable(gene_weights))
+
+        #if there is no codon pointing to current link, the link is still
+        #created, but the weight is 0.0
+        if len(gene_weights) == 0:
+            weight = 0.0
+        else:
+            #Different polygenic schemes, dominance etc...
+            #i.e. how to integrate several weights of codons pointing to the
+            #same link into a single weight to assign to the link of neural net
+            #Average
+            if polygene_strategy == "avg":
+                weight = sum(gene_weights)/float(len(gene_weights))
+            #other schemes?
+        weights.append(weight)
+
+    index_link = 0
+    for conn in list_connections:
+        number = conn[1]
+        link = conn[0]
+        for i in xrange(number):
+            link.params[i] = weights[index_link]
+            index_link = index_link + 1
+    mapped_net.sortModules()
+
+    return mapped_net
+
+
 def map_to_standard_mlp(codon_list, n_in, n_out, n_hidden=0, neur_per_hid=0,
                         polygene_strategy="avg"):  # bias=False(?)
     """Map a list of coding genes (codons) to a Multilayer Fully-connected
@@ -538,32 +641,22 @@ def mutate(genome):
     return offspring
 
 
-def evaluate(ind, problem_db, lbl_db, nb_instances=-1):
+def evaluate(ind, problem_db, lbl_db):
     """Evaluate indiv NN on nb_instances
     with input=problem_db and output=lbl_db"""
     #TODO eval always on the same instances
     fit = 0
-    if nb_instances == -1:
-        instances = problem_db
-        answers = lbl_db
-    else:
-        #Randomly sample "nbInstances" instances without replacement
-        idx_instances = np.random.choice(xrange(len(problem_db)),
-                                         nb_instances,
-                                         replace=False)
-        instances = [problem_db[instance] for instance in idx_instances]
-        answers = [lbl_db[instance] for instance in idx_instances]
 
-    for idx, inp in enumerate(instances):
+    for idx, inp in enumerate(problem_db):
         nn_answer = ind.activate(inp)
         #Error on each instance (euclidian distance to right answer)
         #is normalized between 0 and 1
-        error = np.linalg.norm(np.subtract(nn_answer, answers[idx])) / \
+        error = np.linalg.norm(np.subtract(nn_answer, lbl_db[idx])) / \
             math.sqrt(len(inp))
         fit += 1.0 - error
     #Normalized for the size of the database:
     #average normalized euclidian error over instances
-    return fit/float(len(instances))
+    return fit/float(len(problem_db))
 
 
 def select(population, nb_parents):
@@ -664,7 +757,7 @@ if __name__ == "__main__":
     PROBLEM_DB = []
     LABEL_DB = []
     PROBLEM_SIZE = N_IN
-    DB_SIZE = -1  # -1 for whole problem
+    #-1  # -1 for whole problem
     TASK_SEQUENCE = task_sequence_list  # ["t1.png", "t2.png"]
     # , "t3.png"]  # , "t4.png", "t5.png"]
 
@@ -685,8 +778,8 @@ if __name__ == "__main__":
                                                       (START_CODON,
                                                        END_CODON),
                                                       pleio=PLEIOTROPY)
-        net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
-                                  neur_per_hid=NEUR_HID_LAYER)
+        net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
+                               neur_per_hid=NEUR_HID_LAYER)
         individual = (g, 0.0, codons, PRETTY_GENOME_STRING, net)
         POPULATION[i] = individual
 
@@ -704,7 +797,6 @@ if __name__ == "__main__":
                           for y in xrange(IMG[1]) for x in xrange(IMG[0])]
             LABEL_DB = [x / 255 for x in IMG[2]]
             TOTAL_INSTANCES = IMG[0] * IMG[1]
-            # keep always same instances(todo)
         else:
             #Generate all instances
             TOTAL_INSTANCES = len(SYMBOLS)**PROBLEM_SIZE
@@ -715,15 +807,15 @@ if __name__ == "__main__":
                                       str(PROBLEM_SIZE)).format(i))]
                 PROBLEM_DB.append(input_vector)
                 LABEL_DB.append(task(input_vector, each_task))
-
         INSTANCES_DB = []
         LABEL_INST_DB = []
-
+        DB_SIZE = int(float(PARAMS['Task']['trainingfraction']) *
+                      TOTAL_INSTANCES)
         if DB_SIZE != -1:
             index_instances = np.random.choice(xrange(TOTAL_INSTANCES),
                                                DB_SIZE, replace=False)
-            INSTANCES_DB.append([PROBLEM_DB[i] for i in index_instances])
-            LABEL_INST_DB.append([LABEL_DB[i] for i in index_instances])
+            INSTANCES_DB = [PROBLEM_DB[i] for i in index_instances]
+            LABEL_INST_DB = [LABEL_DB[i] for i in index_instances]
         else:
             INSTANCES_DB = PROBLEM_DB[:]
             LABEL_INST_DB = LABEL_DB[:]
@@ -765,8 +857,8 @@ if __name__ == "__main__":
                                                               (START_CODON,
                                                                END_CODON),
                                                               pleio=PLEIOTROPY)
-                net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
-                                          neur_per_hid=NEUR_HID_LAYER)
+                net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
+                                       neur_per_hid=NEUR_HID_LAYER)
                 #Evaluate children
                 fitness = evaluate(net, INSTANCES_DB, LABEL_INST_DB)
                 individual = (child[:], fitness, codons, PRETTY_GENOME_STRING,
@@ -792,7 +884,7 @@ if __name__ == "__main__":
         formatted_fitness = [[format_float(indiv[1]) for indiv in generation]
                              for generation in POPULATION_LOG]
         LOG_FILE.write(str(formatted_fitness) + "\n")
-        #transfer to next task: best individual
+        #transfer to next task: best individual of last generation
         max_fitness = POPULATION[0][1]
         best_individual = POPULATION[0]
         for individual in POPULATION:
@@ -800,7 +892,7 @@ if __name__ == "__main__":
                 max_fitness = individual[1]
                 best_individual = individual
         NN_LOG_FILE.write(each_task + "\n" + "".join(best_individual[0]) +
-                          "\n" + str(format_float(best_individual[1])))
+                          "\n" + str(format_float(best_individual[1])) + "\n")
         #If there is a following task, i.e. current is not last task
         if each_task != TASK_SEQUENCE[-1]:
             #Initialize population with mutated copies of best_individual
@@ -810,8 +902,8 @@ if __name__ == "__main__":
                                                               (START_CODON,
                                                                END_CODON),
                                                               pleio=PLEIOTROPY)
-                net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
-                                          neur_per_hid=NEUR_HID_LAYER)
+                net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
+                                       neur_per_hid=NEUR_HID_LAYER)
                 individual = (altered_copy, 0.0, codons,
                               PRETTY_GENOME_STRING, net)
                 POPULATION[index] = individual
@@ -848,8 +940,8 @@ if __name__ == "__main__":
                                                           (START_CODON,
                                                            END_CODON),
                                                           pleio=PLEIOTROPY)
-            net = map_to_standard_mlp(codons, N_IN, N_OUT, n_hidden=N_HID,
-                                      neur_per_hid=NEUR_HID_LAYER)
+            net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
+                                   neur_per_hid=NEUR_HID_LAYER)
             NETS_POPULATION.append(net)
         TEST_RESULTS = []
         for net in NETS_POPULATION:
