@@ -48,7 +48,7 @@ for subdir, dirs, files in os.walk(folder):
                 for x in xrange(len(experiments[ind_exp])):
                     result.append(experiments[ind_exp][x])
 
-            #plot.draw_data([("test", zip(*result))])
+            plot.draw_data([(str(subdir), zip(*result))])
             #print result_avg
             result_avg.append(average_list)
 #result_avg = zip(*result_avg)

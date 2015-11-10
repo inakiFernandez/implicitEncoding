@@ -10,6 +10,7 @@ from os.path import isfile, join
 from scipy.stats import *
 from pylab import *
 import brewer2mpl
+from matplotlib.backends.backend_pdf import PdfPages
 
 # find datalog in a directory coresponfing to one experiment
 # in  : a directory path
@@ -178,8 +179,8 @@ def perc(data_l):
     perc_75 = np.zeros(data.shape[1])
     for i in range(0, len(median)):
         median[i] = np.median(data[:, i])
-        perc_25[i] = np.percentile(data[:, i], 25)
-        perc_75[i] = np.percentile(data[:, i], 75)
+        perc_25[i] = np.percentile(data[:, i], 5)
+        perc_75[i] = np.percentile(data[:, i], 95)
     return median, perc_25, perc_75
 
 #returns the maximum swarm fitness value
@@ -226,7 +227,7 @@ def process_experiment(path, maxFit):
 # draw a figure
 
 def plot_one_curve(data, color, axis, label, quartiles=False):
-    print data
+
     med, perc_25, perc_75 = perc(data)
     if quartiles :
         axis.fill_between(np.arange(0, len(med)), perc_25, perc_75,
@@ -330,7 +331,8 @@ def plot_boxplot(stats, colors, axis, labels, sig=False):
 
 
 def draw_data(exp, text = "", runs=False, tex=False):
-    font = {'family' : 'sans', 'size'   : 20}
+
+    font = {'family' : 'sans', 'size'   : 15}
     if tex :
         matplotlib.rc('text', usetex=True)
     matplotlib.rc('font', **font)
@@ -345,13 +347,14 @@ def draw_data(exp, text = "", runs=False, tex=False):
 
     for e in exp:
         (n, data) = e
+        pp = PdfPages(str(n) + ".pdf")
         plot_one_curve(data, colors[(c-5) % len(colors)], ax1,  re.sub('[_/]', '', n), True)
         c=c+1
     #ax1.set_title('Avg. Swarm Fitness over time (%d runs)'%(len(data)))
     #ax1.legend(loc='lower right',prop={'size':25})
     #ax1.set_xlabel('Time (x100)')
     #ax1.set_ylabel('Fitness')
-
+    pp.savefig()
 
     #figtext(.08, .02, text, fontsize=10)
 
@@ -359,3 +362,4 @@ def draw_data(exp, text = "", runs=False, tex=False):
 
     draw()
     show()
+    pp.close()
