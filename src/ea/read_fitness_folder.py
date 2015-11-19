@@ -13,9 +13,10 @@ import numpy as np
 
 folder = sys.argv[1]
 result_avg = []
+type_file = "div"
 for subdir, dirs, files in os.walk(folder):
     for fname in files:
-        if fname.endswith(".log") and fname.startswith("fitness"):
+        if fname.endswith(".log") and fname.startswith(type_file):
 
             f = open(os.path.join(subdir, fname), "r")
 

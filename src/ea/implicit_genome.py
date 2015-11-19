@@ -621,9 +621,10 @@ def mutate(genome):
     First, copy, move or delete a random fragment of the genome at random pos.
     Second, bit-flip for each bit of the genome with small probability"""
     #0.12; 0.12; 0.12; 0.01 MIN
-    p_frag_copy = 0.05
-    p_frag_move = 0.05
-    p_frag_del = 0.05
+    #TODO read mutation parameters from file
+    p_frag_copy = 0.25
+    p_frag_move = 0.25
+    p_frag_del = 0.25
     p_bit_flip = 0.01
 
     muts = {0: frag_copy,
@@ -641,10 +642,113 @@ def mutate(genome):
     return offspring
 
 
+def levenshtein(str1, str2):
+    '''Levenshtein distance between s1 and s2. Code extracted from Wikibooks.
+       It corresponds to the minimal number of deletions, substitutions
+       and insertions to transform s1 into s2 (or vice-versa)
+    '''
+    if len(str1) < len(str2):
+        return levenshtein(str2, str1)
+
+    # len(str1) >= len(str2)
+    if len(str2) == 0:
+        return len(str1)
+
+    previous_row = range(len(str2) + 1)
+    for i, char1 in enumerate(str1):
+        current_row = [i + 1]
+        for j, char2 in enumerate(str2):
+            # j+1 instead of j since previous_row and current_row are
+            #one character longer than s2
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (char1 != char2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+
+    return previous_row[-1]
+
+
+def weight_difference(vector1, vector2):
+    '''Difference of link weights between expressed genes in a genotype'''
+    difference = 0.0
+    #TODO weight
+    return difference
+
+
+def stats_codons(l_codons, genome, n_links):
+    '''Computes some statistics on an individual, mainly regarding coding genes
+       in the genome, cf. below for details.
+       Returns: (number of coding genes, average number of genes for the same
+       link, size of the coding part in the genotype)
+    '''
+    result = [0.0, 0.0, 0.0]
+    target_set = set(xrange(n_links))
+    grouped_codons = [[codon_id, [codon[1] for codon in l_codons
+                                  if codon[0] == codon_id]]
+                      for codon_id in target_set]
+    codons_per_link = [len(codons_link) for codons_link
+                       in grouped_codons]
+    #for codon in grouped_codons:
+
+    result[0] = float(len(codons))
+    result[1] = np.average(codons_per_link)
+    # TODO compute size of coding part
+    result[2] = len(genome)
+    #TODO other stats
+    return result
+
+
+def difference_individuals(ind1, ind2, nlink):
+    '''Computes the difference between two individuals based on their
+       (precomputed) statistics. Several difference values can be returned,
+       depending on the chosen criterion.
+    '''
+    lcodons1 = ind1[2]
+    lcodons2 = ind2[2]
+    genome1 = ind1[0]
+    genome2 = ind2[0]
+    stats1 = stats_codons(lcodons1, genome1, nlink)
+    stats2 = stats_codons(lcodons2, genome2, nlink)
+    diff_vector = np.absolute(np.subtract(stats1, stats2))
+    #c1 for number of codons, c2 for codons per link,
+    #c3 for size of coding part
+    coeff = [0.0, 0.0, 1.0]
+    result = np.dot(diff_vector, coeff)
+    return result
+
+
+def diversity(pop, nb_link):
+    '''Computes a measure of diversity in the population based on the
+       differences between all pairs of individuals. Average of differences
+       between all pairs for now.
+    '''
+    result = 0.0
+    differences = {}
+    vector_stats = []
+    for i, indiv in enumerate(pop):
+        for j, indiv2 in enumerate(pop):
+            if j > i:
+                differences[(i, j)] = difference_individuals(indiv,
+                                                             indiv2, nb_link)
+                differences[(j, i)] = differences[(i, j)]
+                result = result + differences[(i, j)]
+            else:
+                if j == i:
+                    differences[(i, i)] = 0.0
+        vector_stats.append(stats_codons(indiv[2], indiv[0], nb_link))
+    #print differences
+    length = len(pop)
+    nb_combinations = np.math.factorial(length) /\
+        (2 * np.math.factorial(length - 2))
+    result = result / nb_combinations
+    return result, differences, vector_stats
+#TODO diversity from codon stats
+
+
 def evaluate(ind, problem_db, lbl_db):
     """Evaluate indiv NN on nb_instances
     with input=problem_db and output=lbl_db"""
-    #TODO eval always on the same instances
     fit = 0
 
     for idx, inp in enumerate(problem_db):
@@ -702,7 +806,7 @@ if __name__ == "__main__":
 
     VERBOSE = bool(PARAMS['EA']['verbose'])  # True
 
-    task_sequence_list = PARAMS["Task"]["tasksequence"].split(",")
+    TASK_SEQUENCE_LIST = PARAMS["Task"]["tasksequence"].split(",")
 
     LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] + "/" +\
         OUT_FOLDER + "/fitness_" +\
@@ -712,6 +816,10 @@ if __name__ == "__main__":
         OUT_FOLDER + "/neural_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     NN_LOG_FILE = open(NN_LOG_FILENAME, 'w')
+    DIV_LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] + "/" +\
+        OUT_FOLDER + "/div_" +\
+        str(datetime.datetime.now()).replace(" ", "-") + ".log"
+    DIV_LOG_FILE = open(DIV_LOG_FILENAME, 'w')
 ###############################################################################
     # 1 output for logical binary problems
     N_OUT = int(PARAMS["Task"]["outputs"])
@@ -758,7 +866,7 @@ if __name__ == "__main__":
     LABEL_DB = []
     PROBLEM_SIZE = N_IN
     #-1  # -1 for whole problem
-    TASK_SEQUENCE = task_sequence_list  # ["t1.png", "t2.png"]
+    TASK_SEQUENCE = TASK_SEQUENCE_LIST  # ["t1.png", "t2.png"]
     # , "t3.png"]  # , "t4.png", "t5.png"]
 
     PROBLEM_ID = PARAMS['Task']['problemid']  # "IMG"
@@ -782,12 +890,14 @@ if __name__ == "__main__":
                                neur_per_hid=NEUR_HID_LAYER)
         individual = (g, 0.0, codons, PRETTY_GENOME_STRING, net)
         POPULATION[i] = individual
-
+    #print "\n", [indiv[2] for indiv in diversity(POPULATION, N_LINKS)[2]]
 ###############################################################################
     #Total Time
     TIME_START = time.time()
     for each_task in TASK_SEQUENCE:
         POPULATION_LOG = []
+        DIV_LOG = []
+
         print "Learning task: ", each_task
         #Generate full problem
         if PROBLEM_ID == "IMG":
@@ -874,7 +984,9 @@ if __name__ == "__main__":
                 POPULATION[index] = individual
 
             POPULATION_LOG.append(POPULATION)
-
+            DIV_LOG.append(diversity(POPULATION, N_LINKS))
+            #print "\n", [indiv[2] for indiv in
+            #             diversity(POPULATION, N_LINKS)[2]]
             #Logging operations at the end of generation
             sys.stdout.write(" - " + str(ITERATION))
             time_gen_end = time.time()
@@ -883,7 +995,11 @@ if __name__ == "__main__":
         INTERTASK_LOG.append(POPULATION_LOG)
         formatted_fitness = [[format_float(indiv[1]) for indiv in generation]
                              for generation in POPULATION_LOG]
+        print "\n", DIV_LOG
+        formatted_div = [[format_float(indiv[2]) for indiv in generation[2]]
+                         for generation in DIV_LOG]
         LOG_FILE.write(str(formatted_fitness) + "\n")
+        DIV_LOG_FILE.write(str(formatted_div) + "\n")
         #transfer to next task: best individual of last generation
         max_fitness = POPULATION[0][1]
         best_individual = POPULATION[0]
@@ -912,6 +1028,7 @@ if __name__ == "__main__":
 ###############################################################################
     LOG_FILE.close()
     NN_LOG_FILE.close()
+    DIV_LOG_FILE.close()
 
     if VERBOSE:
         TIME_END = time.time()

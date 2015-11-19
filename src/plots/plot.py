@@ -348,7 +348,7 @@ def draw_data(exp, text = "", runs=False, tex=False):
     for e in exp:
         (n, data) = e
         pp = PdfPages(str(n) + ".pdf")
-        plot_one_curve(data, colors[(c-5) % len(colors)], ax1,  re.sub('[_/]', '', n), True)
+        plot_one_curve(data, colors[(c-3) % len(colors)], ax1,  re.sub('[_/]', '', n), True)
         c=c+1
     #ax1.set_title('Avg. Swarm Fitness over time (%d runs)'%(len(data)))
     #ax1.legend(loc='lower right',prop={'size':25})
