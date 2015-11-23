@@ -553,7 +553,7 @@ def extract_codons(genome, target_size, limit_codons, max_weight=1.0,
     gene_str = ""
     spacing = "  ||  "  # " \n---\n "
     separator = " - "
-
+    coding_part_size = 0
     while idx in xrange(len(genome)):
         #If there is a start codon, then read a whole gene
         if "".join(genome[idx:]).startswith(start_codon):
@@ -594,13 +594,14 @@ def extract_codons(genome, target_size, limit_codons, max_weight=1.0,
 
                 out_str = out_str + gene_str
                 gene_str = ""
+                coding_part_size = coding_part_size +\
+                    (j - gene_start_index + 1)
             else:
                 #if genome read is finished and the current gene is not ended
                 #it is not a valid gene, and it is not added to the codon list
                 out_str = out_str + "".join(genome[gene_start_index:])
                 gene_str = ""
                 break
-            #TOTEST pleiotropy
             if pleio:
                 #If pleiotropy is activated, continue reading just after
                 #previous gene's start codon
@@ -612,7 +613,7 @@ def extract_codons(genome, target_size, limit_codons, max_weight=1.0,
         else:
             out_str = out_str + str(genome[idx])
             idx = idx + 1
-    return codon_list, out_str
+    return codon_list, out_str, coding_part_size
 ###############################################################################
 
 
@@ -620,12 +621,11 @@ def mutate(genome):
     """Mutate one single genome.
     First, copy, move or delete a random fragment of the genome at random pos.
     Second, bit-flip for each bit of the genome with small probability"""
-    #0.12; 0.12; 0.12; 0.01 MIN
     #TODO read mutation parameters from file
-    p_frag_copy = 0.25
-    p_frag_move = 0.25
-    p_frag_del = 0.25
-    p_bit_flip = 0.01
+    p_frag_copy = 0.30
+    p_frag_move = 0.30
+    p_frag_del = 0.30
+    p_bit_flip = 0.03
 
     muts = {0: frag_copy,
             1: frag_move,
@@ -816,10 +816,19 @@ if __name__ == "__main__":
         OUT_FOLDER + "/neural_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     NN_LOG_FILE = open(NN_LOG_FILENAME, 'w')
-    DIV_LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] + "/" +\
-        OUT_FOLDER + "/div_" +\
+    SIZE_LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] + "/" +\
+        OUT_FOLDER + "/size_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
-    DIV_LOG_FILE = open(DIV_LOG_FILENAME, 'w')
+    SIZE_LOG_FILE = open(SIZE_LOG_FILENAME, 'w')
+    CODONS_LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] +\
+        "/" + OUT_FOLDER + "/codons_" +\
+        str(datetime.datetime.now()).replace(" ", "-") + ".log"
+    CODONS_LOG_FILE = open(CODONS_LOG_FILENAME, 'w')
+    GENES_PER_LINK_LOG_FILENAME = "logs/" +\
+        CONFIG.split("/")[-1].split(".")[0] +\
+        "/" + OUT_FOLDER + "/gpl_" +\
+        str(datetime.datetime.now()).replace(" ", "-") + ".log"
+    GENES_PER_LINK_LOG_FILE = open(GENES_PER_LINK_LOG_FILENAME, 'w')
 ###############################################################################
     # 1 output for logical binary problems
     N_OUT = int(PARAMS["Task"]["outputs"])
@@ -827,6 +836,7 @@ if __name__ == "__main__":
     N_HID = int(PARAMS['NN']['nhidlay'])  # 1
     NEUR_HID_LAYER = int(PARAMS['NN']['neurperlay'])  # 2
     #Proportion of junk genes in-between genes on initialization of the genome
+    #TODO Read from file
     FRAC_JUNK_GENES = 0.0
     SYMBOLS = ['0', '1']
     #Number of nucleotids for weight field on initialization
@@ -856,8 +866,8 @@ if __name__ == "__main__":
     MU = int(PARAMS['EA']['mu'])  # 10
     NB_GENERATIONS = int(PARAMS['EA']['generations'])  # 15
     # number of children per parent
-    PARENT_CHILDREN_RATIO = float(PARAMS['EA']['lambdapermu'])  # 1.0
-    # selectionRatio * mu == lambda nb of children
+    PARENT_CHILDREN_RATIO = float(PARAMS['EA']['lambdapermu'])
+    # parent/children ratio * mu == lambda nb of children
     LAMBDA = int(round(MU * PARENT_CHILDREN_RATIO))
     #mu parents in the beginning and lbda children every generation
 
@@ -866,10 +876,9 @@ if __name__ == "__main__":
     LABEL_DB = []
     PROBLEM_SIZE = N_IN
     #-1  # -1 for whole problem
-    TASK_SEQUENCE = TASK_SEQUENCE_LIST  # ["t1.png", "t2.png"]
-    # , "t3.png"]  # , "t4.png", "t5.png"]
+    TASK_SEQUENCE = TASK_SEQUENCE_LIST
 
-    PROBLEM_ID = PARAMS['Task']['problemid']  # "IMG"
+    PROBLEM_ID = PARAMS['Task']['problemid']
     # "RETAND" "MIN", "AND", "OR", "MAJ", "RETOR" "IMG"
 ###############################################################################
 ###############################################################################
@@ -882,10 +891,10 @@ if __name__ == "__main__":
     for i in xrange(MU):
         g = create_genome(N_LINKS, FRAC_JUNK_GENES, NUCL_PER_WEIGHT,
                           (START_CODON, END_CODON), SYMBOLS)
-        codons, PRETTY_GENOME_STRING = extract_codons(g, TGT_SIZE,
-                                                      (START_CODON,
-                                                       END_CODON),
-                                                      pleio=PLEIOTROPY)
+        codons, PRETTY_GENOME_STRING, c_size = extract_codons(g, TGT_SIZE,
+                                                              (START_CODON,
+                                                               END_CODON),
+                                                              pleio=PLEIOTROPY)
         net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
                                neur_per_hid=NEUR_HID_LAYER)
         individual = (g, 0.0, codons, PRETTY_GENOME_STRING, net)
@@ -935,7 +944,7 @@ if __name__ == "__main__":
         PRETTY_GENOME_STRING = ""
 
         #Initial population: mu individuals, valid ones
-        #(all random links correctly encoded) OR random binary string
+        #all random links correctly encoded
         for i in xrange(MU):
             net = POPULATION[i][4]
             #Evaluate initial population
@@ -962,11 +971,11 @@ if __name__ == "__main__":
             #Note: it is easier to break a link gene than creating a new one
             for index, i in enumerate(parents):
                 child = mutate(i[0][:])
-                codons, PRETTY_GENOME_STRING = extract_codons(child[:],
-                                                              TGT_SIZE,
-                                                              (START_CODON,
-                                                               END_CODON),
-                                                              pleio=PLEIOTROPY)
+                codons, PRETTY_GENOME_STRING, c_size = extract_codons(child[:],
+                                                                      TGT_SIZE,
+                                                                      (START_CODON,
+                                                                       END_CODON),
+                                                                      pleio=PLEIOTROPY)
                 net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
                                        neur_per_hid=NEUR_HID_LAYER)
                 #Evaluate children
@@ -995,11 +1004,19 @@ if __name__ == "__main__":
         INTERTASK_LOG.append(POPULATION_LOG)
         formatted_fitness = [[format_float(indiv[1]) for indiv in generation]
                              for generation in POPULATION_LOG]
-        print "\n", DIV_LOG
-        formatted_div = [[format_float(indiv[2]) for indiv in generation[2]]
-                         for generation in DIV_LOG]
+        #print "\n", DIV_LOG
+        formatted_size = [[format_float(indiv[2]) for indiv in generation[2]]
+                          for generation in DIV_LOG]
+        formatted_codons = [[format_float(indiv[0]) for indiv in generation[2]]
+                            for generation in DIV_LOG]
+        formatted_genes_per_link = [[format_float(indiv[1])
+                                     for indiv in generation[2]]
+                                    for generation in DIV_LOG]
         LOG_FILE.write(str(formatted_fitness) + "\n")
-        DIV_LOG_FILE.write(str(formatted_div) + "\n")
+        SIZE_LOG_FILE.write(str(formatted_size) + "\n")
+        CODONS_LOG_FILE.write(str(formatted_codons) + "\n")
+        GENES_PER_LINK_LOG_FILE.write(str(formatted_genes_per_link) + "\n")
+
         #transfer to next task: best individual of last generation
         max_fitness = POPULATION[0][1]
         best_individual = POPULATION[0]
@@ -1014,10 +1031,11 @@ if __name__ == "__main__":
             #Initialize population with mutated copies of best_individual
             for index in xrange(MU):
                 altered_copy = mutate(best_individual[0][:])
-                codons, PRETTY_GENOME_STRING = extract_codons(g, TGT_SIZE,
-                                                              (START_CODON,
-                                                               END_CODON),
-                                                              pleio=PLEIOTROPY)
+                codons, PRETTY_GENOME_STRING, c_size = extract_codons(g,
+                                                                      TGT_SIZE,
+                                                                      (START_CODON,
+                                                                       END_CODON),
+                                                                      pleio=PLEIOTROPY)
                 net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
                                        neur_per_hid=NEUR_HID_LAYER)
                 individual = (altered_copy, 0.0, codons,
@@ -1028,7 +1046,9 @@ if __name__ == "__main__":
 ###############################################################################
     LOG_FILE.close()
     NN_LOG_FILE.close()
-    DIV_LOG_FILE.close()
+    SIZE_LOG_FILE.close()
+    CODONS_LOG_FILE.close()
+    GENES_PER_LINK_LOG_FILE.close()
 
     if VERBOSE:
         TIME_END = time.time()
@@ -1053,10 +1073,11 @@ if __name__ == "__main__":
         #Test (& generalization if tested on more instances)
         NETS_POPULATION = []
         for g in POPULATION:
-            codons, PRETTY_GENOME_STRING = extract_codons(g[0], TGT_SIZE,
-                                                          (START_CODON,
-                                                           END_CODON),
-                                                          pleio=PLEIOTROPY)
+            codons, PRETTY_GENOME_STRING, c_size = extract_codons(g[0],
+                                                                  TGT_SIZE,
+                                                                  (START_CODON,
+                                                                   END_CODON),
+                                                                  pleio=PLEIOTROPY)
             net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
                                    neur_per_hid=NEUR_HID_LAYER)
             NETS_POPULATION.append(net)
