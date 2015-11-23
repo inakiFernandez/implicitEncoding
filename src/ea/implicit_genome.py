@@ -669,11 +669,36 @@ def levenshtein(str1, str2):
     return previous_row[-1]
 
 
-def weight_difference(vector1, vector2):
-    '''Difference of link weights between expressed genes in a genotype'''
+def weight_difference(codons1, codons2, n_links):
+    '''2-norm of the difference of link weights
+    between expressed genes in a genotype'''
     difference = 0.0
-    #TODO weight
-    return difference
+
+    target_set = set(xrange(n_links))
+    grouped_codons1 = [[codon_id, [codon[1] for codon in codons1
+                                   if codon[0] == codon_id]]
+                       for codon_id in target_set]
+    grouped_codons2 = [[codon_id, [codon[1] for codon in codons2
+                                   if codon[0] == codon_id]]
+                       for codon_id in target_set]
+    for i in target_set:
+        weight1 = 0.0
+        if i in [codon[0] for codon in grouped_codons1]:
+            gene_1 = [w1 for w1 in codon[1] if codon[0] == target_set
+                       for codon in grouped_codons1]
+            print gene_1
+            print sum(gene_1) / float(len(gene_1))
+
+        weight2 = 0.0
+        if i in [codon[0] for codon in grouped_codons2]:
+            gene_2 = [w1 for w1 in codon[1] if codon[0] == target_set
+                       for codon in grouped_codons2]
+            print gene_2
+            print sum(gene_2) / float(len(gene_2)) #TODO weight2
+
+        difference = difference + (weight1 - weight2) * (weight1 - weight2)
+
+    return np.sqrt(difference)
 
 
 def stats_codons(l_codons, genome, n_links):
@@ -693,7 +718,6 @@ def stats_codons(l_codons, genome, n_links):
 
     result[0] = float(len(codons))
     result[1] = np.average(codons_per_link)
-    # TODO compute size of coding part
     result[2] = len(genome)
     #TODO other stats
     return result
@@ -727,6 +751,7 @@ def diversity(pop, nb_link):
     differences = {}
     vector_stats = []
     for i, indiv in enumerate(pop):
+        print indiv
         for j, indiv2 in enumerate(pop):
             if j > i:
                 differences[(i, j)] = difference_individuals(indiv,
@@ -736,7 +761,8 @@ def diversity(pop, nb_link):
             else:
                 if j == i:
                     differences[(i, i)] = 0.0
-        vector_stats.append(stats_codons(indiv[2], indiv[0], nb_link))
+        vector_stats.append(stats_codons(indiv[2], indiv[0], nb_link)
+                            + [indiv[5]])
     #print differences
     length = len(pop)
     nb_combinations = np.math.factorial(length) /\
@@ -829,6 +855,11 @@ if __name__ == "__main__":
         "/" + OUT_FOLDER + "/gpl_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     GENES_PER_LINK_LOG_FILE = open(GENES_PER_LINK_LOG_FILENAME, 'w')
+    CODING_SIZE_LOG_FILENAME = "logs/" +\
+        CONFIG.split("/")[-1].split(".")[0] +\
+        "/" + OUT_FOLDER + "/coding_size_" +\
+        str(datetime.datetime.now()).replace(" ", "-") + ".log"
+    CODING_SIZE_LOG_FILE = open(CODING_SIZE_LOG_FILENAME, 'w')
 ###############################################################################
     # 1 output for logical binary problems
     N_OUT = int(PARAMS["Task"]["outputs"])
@@ -897,7 +928,7 @@ if __name__ == "__main__":
                                                               pleio=PLEIOTROPY)
         net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
                                neur_per_hid=NEUR_HID_LAYER)
-        individual = (g, 0.0, codons, PRETTY_GENOME_STRING, net)
+        individual = (g, 0.0, codons, PRETTY_GENOME_STRING, net, c_size)
         POPULATION[i] = individual
     #print "\n", [indiv[2] for indiv in diversity(POPULATION, N_LINKS)[2]]
 ###############################################################################
@@ -950,7 +981,8 @@ if __name__ == "__main__":
             #Evaluate initial population
             fitness = evaluate(net, INSTANCES_DB, LABEL_INST_DB)
             POPULATION[i] = (POPULATION[i][0], fitness, POPULATION[i][2],
-                             POPULATION[i][3], POPULATION[i][4])
+                             POPULATION[i][3], POPULATION[i][4],
+                             POPULATION[i][5])
 
         POPULATION_LOG.append(POPULATION)
 
@@ -981,14 +1013,14 @@ if __name__ == "__main__":
                 #Evaluate children
                 fitness = evaluate(net, INSTANCES_DB, LABEL_INST_DB)
                 individual = (child[:], fitness, codons, PRETTY_GENOME_STRING,
-                              net)
+                              net, c_size)
                 children[index] = individual
 
             full_population = (POPULATION + children)
             #Truncation "plus" survivor sel./replacement [parents + children]
             surviving_individuals = survive(full_population, MU)
 
-            POPULATION = [("", 0.0, [], "", None)] * MU
+            POPULATION = [("", 0.0, [], "", None, 0.0)] * MU
             for index, individual in enumerate(surviving_individuals):
                 POPULATION[index] = individual
 
@@ -1012,10 +1044,14 @@ if __name__ == "__main__":
         formatted_genes_per_link = [[format_float(indiv[1])
                                      for indiv in generation[2]]
                                     for generation in DIV_LOG]
+        formatted_coding_size = [[format_float(indiv[3])
+                                 for indiv in generation[2]]
+                                 for generation in DIV_LOG]
         LOG_FILE.write(str(formatted_fitness) + "\n")
         SIZE_LOG_FILE.write(str(formatted_size) + "\n")
         CODONS_LOG_FILE.write(str(formatted_codons) + "\n")
         GENES_PER_LINK_LOG_FILE.write(str(formatted_genes_per_link) + "\n")
+        CODING_SIZE_LOG_FILE.write(str(formatted_coding_size) + "\n")
 
         #transfer to next task: best individual of last generation
         max_fitness = POPULATION[0][1]
@@ -1039,7 +1075,7 @@ if __name__ == "__main__":
                 net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
                                        neur_per_hid=NEUR_HID_LAYER)
                 individual = (altered_copy, 0.0, codons,
-                              PRETTY_GENOME_STRING, net)
+                              PRETTY_GENOME_STRING, net, c_size)
                 POPULATION[index] = individual
 
         print
@@ -1049,6 +1085,7 @@ if __name__ == "__main__":
     SIZE_LOG_FILE.close()
     CODONS_LOG_FILE.close()
     GENES_PER_LINK_LOG_FILE.close()
+    CODING_SIZE_LOG_FILE.close()
 
     if VERBOSE:
         TIME_END = time.time()
