@@ -13,7 +13,7 @@ import numpy as np
 
 folder = sys.argv[1]
 result_avg = []
-type_file = "div"
+type_file = sys.argv[2]  # "fitness" or "div"
 for subdir, dirs, files in os.walk(folder):
     for fname in files:
         if fname.endswith(".log") and fname.startswith(type_file):
@@ -37,11 +37,10 @@ for subdir, dirs, files in os.walk(folder):
                     for ind in re.findall(r"'([^']*)'", gen):
                         gener.append(float(ind))
                     floats.append(gener)
-                    #print np.average(gener)
                     average_list.append(np.average(gener))
                 experiments.append(floats)
-            #for x in experiments:
-            #    plot.draw_data([("test", x)])
+            for x in experiments:
+                plot.draw_data([(str(type_file) + "-" + fname, x)])
 
             result = []
 
@@ -54,6 +53,6 @@ for subdir, dirs, files in os.walk(folder):
             result_avg.append(average_list)
 #result_avg = zip(*result_avg)
 #print result_avg
-print len(result_avg)
-print len(result_avg[0])
+#print len(result_avg)
+#print len(result_avg[0])
 plot.draw_data([("test", result_avg)])
