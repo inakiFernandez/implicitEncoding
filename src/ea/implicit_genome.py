@@ -621,7 +621,7 @@ def mutate(genome, probs):
     """Mutate one single genome.
     First, copy, move or delete a random fragment of the genome at random pos.
     Second, bit-flip for each bit of the genome with small probability"""
-    #TOTEST read mutation parameters from file
+
     #p_frag_copy = 0.30
     #p_frag_move = 0.30
     #p_frag_del = 0.30
@@ -635,7 +635,7 @@ def mutate(genome, probs):
     muts = {0: frag_copy,
             1: frag_move,
             2: frag_del,
-            3: do_nothing}  # 4 : [geneIns, pGeneIns]};
+            3: do_nothing}
 
     p_nothing = 1 - p_frag_copy - p_frag_move - p_frag_del
 
@@ -1119,11 +1119,10 @@ if __name__ == "__main__":
         #Test (& generalization if tested on more instances)
         NETS_POPULATION = []
         for g in POPULATION:
-            codons, PRETTY_STRING, c_size = extract_codons(g[0],
-                                                                  TGT_SIZE,
-                                                                  (START_CODON,
-                                                                   END_CODON),
-                                                                  pleio=PLEIOTROPY)
+            codons, PRETTY_STRING, c_size = extract_codons(g[0], TGT_SIZE,
+                                                           (START_CODON,
+                                                            END_CODON),
+                                                           pleio=PLEIOTROPY)
             net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
                                    neur_per_hid=NEUR_HID_LAYER)
             NETS_POPULATION.append(net)
