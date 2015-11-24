@@ -626,7 +626,7 @@ def mutate(genome, probs):
     #p_frag_move = 0.30
     #p_frag_del = 0.30
     #p_bit_flip = 0.03
-    print probs
+
     p_frag_copy = probs[0]
     p_frag_move = probs[1]
     p_frag_del = probs[2]
