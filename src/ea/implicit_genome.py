@@ -685,16 +685,16 @@ def weight_difference(codons1, codons2, n_links):
         weight1 = 0.0
         if i in [codon[0] for codon in grouped_codons1]:
             gene_1 = [w1 for w1 in codon[1] if codon[0] == target_set
-                       for codon in grouped_codons1]
+                      for codon in grouped_codons1]
             print gene_1
             print sum(gene_1) / float(len(gene_1))
 
         weight2 = 0.0
         if i in [codon[0] for codon in grouped_codons2]:
             gene_2 = [w1 for w1 in codon[1] if codon[0] == target_set
-                       for codon in grouped_codons2]
+                      for codon in grouped_codons2]
             print gene_2
-            print sum(gene_2) / float(len(gene_2)) #TODO weight2
+            print sum(gene_2) / float(len(gene_2))  # TODO weight2
 
         difference = difference + (weight1 - weight2) * (weight1 - weight2)
 
@@ -751,7 +751,7 @@ def diversity(pop, nb_link):
     differences = {}
     vector_stats = []
     for i, indiv in enumerate(pop):
-        print indiv
+        #print indiv
         for j, indiv2 in enumerate(pop):
             if j > i:
                 differences[(i, j)] = difference_individuals(indiv,
