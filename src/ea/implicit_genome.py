@@ -718,7 +718,7 @@ def stats_codons(l_codons, genome, n_links):
     grouped_codons = [[codon_id, [codon[1] for codon in l_codons
                                   if codon[0] == codon_id]]
                       for codon_id in target_set]
-    codons_per_link = [len(codons_link) for codons_link in grouped_codons]
+    codons_per_link = [len(link[1]) for link in grouped_codons]
 
     result[0] = float(len(codons))
     result[1] = np.average(codons_per_link)
