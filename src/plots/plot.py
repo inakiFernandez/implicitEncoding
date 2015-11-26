@@ -330,7 +330,7 @@ def plot_boxplot(stats, colors, axis, labels, sig=False):
 
 
 
-def draw_data(exp, text = "", runs=False, tex=False):
+def draw_data(exp, text = "", runs=False, tex=False, out_folder=""):
 
     font = {'family' : 'sans', 'size'   : 15}
     if tex :
@@ -347,8 +347,9 @@ def draw_data(exp, text = "", runs=False, tex=False):
 
     for e in exp:
         (n, data) = e
-        pp = PdfPages(str(n) + ".pdf")
-        plot_one_curve(data, colors[(c-3) % len(colors)], ax1,  re.sub('[_/]', '', n), True)
+        pp = PdfPages(out_folder + "/" + str(n) + ".pdf")
+        plot_one_curve(data, colors[(c-3) % len(colors)], ax1,
+                                    re.sub('[_/]', '', n), True)
         c=c+1
 
     ax1.set_title(str(n))

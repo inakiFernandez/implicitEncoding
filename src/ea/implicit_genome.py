@@ -693,6 +693,7 @@ def weight_difference(codons1, codons2, n_links):
                       for codon in grouped_codons1]
             print gene_1
             print sum(gene_1) / float(len(gene_1))
+            weight1 = sum(gene_1) / float(len(gene_1))
 
         weight2 = 0.0
         if i in [codon[0] for codon in grouped_codons2]:
@@ -717,13 +718,11 @@ def stats_codons(l_codons, genome, n_links):
     grouped_codons = [[codon_id, [codon[1] for codon in l_codons
                                   if codon[0] == codon_id]]
                       for codon_id in target_set]
-    codons_per_link = [len(codons_link) for codons_link
-                       in grouped_codons]
-    #for codon in grouped_codons:
+    codons_per_link = [len(codons_link) for codons_link in grouped_codons]
 
     result[0] = float(len(codons))
     result[1] = np.average(codons_per_link)
-    result[2] = len(genome)
+    result[2] = float(len(genome))
     #TODO other stats
     return result
 
@@ -752,28 +751,30 @@ def diversity(pop, nb_link):
        differences between all pairs of individuals. Average of differences
        between all pairs for now.
     '''
-    result = 0.0
-    differences = {}
+    #result = 0.0
+    #differences = {}
     vector_stats = []
     for i, indiv in enumerate(pop):
-        #print indiv
-        for j, indiv2 in enumerate(pop):
-            if j > i:
-                differences[(i, j)] = difference_individuals(indiv,
-                                                             indiv2, nb_link)
-                differences[(j, i)] = differences[(i, j)]
-                result = result + differences[(i, j)]
-            else:
-                if j == i:
-                    differences[(i, i)] = 0.0
-        vector_stats.append(stats_codons(indiv[2], indiv[0], nb_link)
-                            + [indiv[5]])
+        #for j, indiv2 in enumerate(pop):
+        #    if j > i:
+        #        differences[(i, j)] = difference_individuals(indiv,
+        #                                                     indiv2, nb_link)
+        #        differences[(j, i)] = differences[(i, j)]
+        #        result = result + differences[(i, j)]
+        #    else:
+        #        if j == i:
+        #            differences[(i, i)] = 0.0
+        stats = stats_codons(indiv[2], indiv[0], nb_link)
+        vector_stats.append(stats + [indiv[5] / stats[2], float(indiv[5])])
     #print differences
-    length = len(pop)
-    nb_combinations = np.math.factorial(length) /\
-        (2 * np.math.factorial(length - 2))
-    result = result / nb_combinations
-    return result, differences, vector_stats
+    #length = len(pop)
+    #nb_combinations = np.math.factorial(length) /\
+    #    (2 * np.math.factorial(length - 2))
+    #result = result / nb_combinations
+    #return result, differences,
+    return vector_stats
+    #number of codons, avg number of genes per link, genome size, coding genome
+    #fraction, coding genome size
 #TODO diversity from codon stats
 
 
@@ -1036,8 +1037,7 @@ if __name__ == "__main__":
 
             POPULATION_LOG.append(POPULATION)
             DIV_LOG.append(diversity(POPULATION, N_LINKS))
-            #print "\n", [indiv[2] for indiv in
-            #             diversity(POPULATION, N_LINKS)[2]]
+
             #Logging operations at the end of generation
             sys.stdout.write(" - " + str(ITERATION))
             time_gen_end = time.time()
@@ -1046,16 +1046,15 @@ if __name__ == "__main__":
         INTERTASK_LOG.append(POPULATION_LOG)
         formatted_fitness = [[format_float(indiv[1]) for indiv in generation]
                              for generation in POPULATION_LOG]
-        #print "\n", DIV_LOG
-        formatted_size = [[format_float(indiv[2]) for indiv in generation[2]]
+        formatted_size = [[format_float(indiv[2]) for indiv in generation]
                           for generation in DIV_LOG]
-        formatted_codons = [[format_float(indiv[0]) for indiv in generation[2]]
+        formatted_codons = [[format_float(indiv[0]) for indiv in generation]
                             for generation in DIV_LOG]
         formatted_genes_per_link = [[format_float(indiv[1])
-                                     for indiv in generation[2]]
+                                     for indiv in generation]
                                     for generation in DIV_LOG]
         formatted_coding_size = [[format_float(indiv[3])
-                                 for indiv in generation[2]]
+                                 for indiv in generation]
                                  for generation in DIV_LOG]
         LOG_FILE.write(str(formatted_fitness) + "\n")
         SIZE_LOG_FILE.write(str(formatted_size) + "\n")

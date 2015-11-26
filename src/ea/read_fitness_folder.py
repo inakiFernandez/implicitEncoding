@@ -13,7 +13,10 @@ import numpy as np
 
 folder = sys.argv[1]
 result_avg = []
-type_file = sys.argv[2]  # "fitness" or "div"
+type_file = sys.argv[2]
+out_folder_name = folder.split("/")[1] + "-" + type_file
+if not os.path.exists(out_folder_name):
+    os.mkdir(out_folder_name)
 for subdir, dirs, files in os.walk(folder):
     for fname in files:
         if fname.endswith(".log") and fname.startswith(type_file):
@@ -37,10 +40,12 @@ for subdir, dirs, files in os.walk(folder):
                     for ind in re.findall(r"'([^']*)'", gen):
                         gener.append(float(ind))
                     floats.append(gener)
-                    average_list.append(np.average(gener))
+                    average_list.append(np.median(gener))
                 experiments.append(floats)
-            for x in experiments:
-                plot.draw_data([(str(type_file) + "-" + fname, x)])
+            for index, x in enumerate(experiments):
+                plot.draw_data([(subdir.split("/")[2] + "-" +
+                                 str(index) + "-" + type_file, zip(*x))],
+                               out_folder=out_folder_name)
 
             result = []
 
@@ -48,11 +53,10 @@ for subdir, dirs, files in os.walk(folder):
                 for x in xrange(len(experiments[ind_exp])):
                     result.append(experiments[ind_exp][x])
 
-            plot.draw_data([(str(subdir), zip(*result))])
-            #print result_avg
+            plot.draw_data([(subdir.split("/")[2] + "-allIndiv-" + type_file,
+                             zip(*result))],
+                           out_folder=out_folder_name)
             result_avg.append(average_list)
-#result_avg = zip(*result_avg)
-#print result_avg
-#print len(result_avg)
-#print len(result_avg[0])
-plot.draw_data([("test", result_avg)])
+
+plot.draw_data([("median-" + type_file, result_avg)],
+               out_folder=out_folder_name)
