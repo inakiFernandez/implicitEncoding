@@ -538,6 +538,17 @@ def map_to_standard_mlp(codon_list, n_in, n_out, n_hidden=0, neur_per_hid=0,
     return mapped_net
 
 
+def map_to_mlp_no_pybrain(codon_list, n_in, n_out, n_hidden=0, neur_per_hid=0,
+                          polygene_strategy="avg"):  # bias=False(?)
+    """Mapping a codon list (id_codon, weight) to a given neural structure,
+    It returns the weight vector(s) connecting each pair of layers in a
+    Feed Forward NN, or multilayered perceptron."""
+    #TODO implement
+    #TODO write evaluate() function using weight vector, and thus compute
+    #NN activation
+    return None
+
+
 def extract_codons(genome, target_size, limit_codons, max_weight=1.0,
                    pleio=False):
     """Extracts the sequence of coding genes from genome, using given start
