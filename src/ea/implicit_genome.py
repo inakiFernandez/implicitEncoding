@@ -21,6 +21,7 @@ import brewer2mpl
 from pylab import subplot2grid
 import load_classif_image as classif
 import datetime
+import collections
 
 
 class PrettyFloat(float):
@@ -37,6 +38,18 @@ class AutoVivification(dict):
         except KeyError:
             value = self[item] = type(self)()
             return value
+
+
+def flatten(l):
+    '''From stackoverflow. Transforms a multidimensional list into a flattened
+    1-D list'''
+    for el in l:
+        if isinstance(el, collections.Iterable) and not isinstance(el,
+                                                                   basestring):
+            for sub in flatten(el):
+                yield sub
+        else:
+            yield el
 
 
 def format_float(value):
@@ -542,11 +555,66 @@ def map_to_mlp_no_pybrain(codon_list, n_in, n_out, n_hidden=0, neur_per_hid=0,
                           polygene_strategy="avg"):  # bias=False(?)
     """Mapping a codon list (id_codon, weight) to a given neural structure,
     It returns the weight vector(s) connecting each pair of layers in a
-    Feed Forward NN, or multilayered perceptron."""
-    #TODO implement
+    Feed Forward NN, or multilayered perceptron.
+    The effect of multiple codons targeting the same
+    connection is determined by the polygene_strategy (average by default)"""
+
+    n_weight_layers = n_hidden + 1
+    weight_vectors = [[]] * n_weight_layers
+    if n_hidden <= 0:
+        num_links = n_in * n_out
+        weight_vectors[0] = [0.0] * num_links
+    else:
+        num_links = n_in * neur_per_hid + neur_per_hid * n_out + \
+            (n_hidden - 1) * (neur_per_hid * neur_per_hid)
+        weight_vectors[0] = [0.0] * n_in * neur_per_hid
+        for i in xrange(1, n_weight_layers - 1):
+            weight_vectors[i] = [0.0] * neur_per_hid * neur_per_hid
+        weight_vectors[-1] = [0.0] * neur_per_hid * n_out
+
+    target_set = set(xrange(num_links))
+    grouped_codons = [[codon_id, [codon[1] for codon in codon_list
+                                  if codon[0] == codon_id]]
+                      for codon_id in target_set]
+    grouped_codons = sorted(grouped_codons, key=lambda codon: codon[0])
+    if polygene_strategy == "avg":
+        weights = dict([[codon[0], sum(codon[1])/float(len(codon[1]))
+                         if len(codon[1]) else 0.0]
+                        for codon in grouped_codons])
+    if n_hidden <= 0:
+        for i in xrange(num_links):
+            if i in weights:
+                weight_vectors[0][i] = weights[i]
+        weight_vectors[0] = np.reshape(weight_vectors[0], (n_in, n_out))
+    else:
+        i = 0
+        for l in xrange(n_weight_layers):
+            if l == 0:
+                for j in xrange(n_in * neur_per_hid):
+                    if i in weights:
+                        weight_vectors[l][j] = weights[i]
+                    i = i + 1
+                weight_vectors[l] = np.reshape(weight_vectors[l],
+                                               (n_in, neur_per_hid))
+            else:
+                if l == (n_weight_layers - 1):
+                    for j in xrange(neur_per_hid * n_out):
+                        if i in weights:
+                            weight_vectors[l][j] = weights[i]
+                        i = i + 1
+                    weight_vectors[l] = np.reshape(weight_vectors[l],
+                                                   (neur_per_hid, n_out))
+                else:
+                    for j in xrange(neur_per_hid * neur_per_hid):
+                        if i in weights:
+                            weight_vectors[l][j] = weights[i]
+                        i = i + 1
+                    weight_vectors[l] = np.reshape(weight_vectors[l],
+                                                   (neur_per_hid,
+                                                    neur_per_hid))
+    return weight_vectors
     #TODO write evaluate() function using weight vector, and thus compute
     #NN activation
-    return None
 
 
 def extract_codons(genome, target_size, limit_codons, max_weight=1.0,
@@ -633,11 +701,6 @@ def mutate(genome, probs):
     First, copy, move or delete a random fragment of the genome at random pos.
     Second, bit-flip for each bit of the genome with small probability"""
 
-    #p_frag_copy = 0.30
-    #p_frag_move = 0.30
-    #p_frag_del = 0.30
-    #p_bit_flip = 0.03
-
     p_frag_copy = probs[0]
     p_frag_move = probs[1]
     p_frag_del = probs[2]
@@ -722,8 +785,7 @@ def stats_codons(l_codons, genome, n_links):
     '''Computes some statistics on an individual, mainly regarding coding genes
        in the genome, cf. below for details.
        Returns: (number of coding genes, average number of genes for the same
-       link, size of the coding part in the genotype)
-    '''
+       link, size of the coding part in the genotype)'''
     result = [0.0, 0.0, 0.0]
     target_set = set(xrange(n_links))
     grouped_codons = [[codon_id, [codon[1] for codon in l_codons
@@ -734,15 +796,13 @@ def stats_codons(l_codons, genome, n_links):
     result[0] = float(len(codons))
     result[1] = np.average(codons_per_link)
     result[2] = float(len(genome))
-    #TODO other stats
     return result
 
 
 def difference_individuals(ind1, ind2, nlink):
     '''Computes the difference between two individuals based on their
        (precomputed) statistics. Several difference values can be returned,
-       depending on the chosen criterion.
-    '''
+       depending on the chosen criterion.'''
     lcodons1 = ind1[2]
     lcodons2 = ind2[2]
     genome1 = ind1[0]
@@ -760,8 +820,7 @@ def difference_individuals(ind1, ind2, nlink):
 def diversity(pop, nb_link):
     '''Computes a measure of diversity in the population based on the
        differences between all pairs of individuals. Average of differences
-       between all pairs for now.
-    '''
+       between all pairs for now.'''
     #result = 0.0
     #differences = {}
     vector_stats = []
@@ -776,8 +835,9 @@ def diversity(pop, nb_link):
         #        if j == i:
         #            differences[(i, i)] = 0.0
         stats = stats_codons(indiv[2], indiv[0], nb_link)
-        vector_stats.append(stats + [indiv[5] / stats[2], float(indiv[5])])
-    #print differences
+        vector_stats.append(stats + [indiv[5] / stats[2], float(indiv[5]),
+                                     np.linalg.norm(list(flatten(indiv[4]))) /
+                                     len(list(flatten(indiv[4])))])
     #length = len(pop)
     #nb_combinations = np.math.factorial(length) /\
     #    (2 * np.math.factorial(length - 2))
@@ -796,6 +856,36 @@ def evaluate(ind, problem_db, lbl_db):
 
     for idx, inp in enumerate(problem_db):
         nn_answer = ind.activate(inp)
+        #Error on each instance (euclidian distance to right answer)
+        #is normalized between 0 and 1
+        error = np.linalg.norm(np.subtract(nn_answer, lbl_db[idx])) / \
+            math.sqrt(len(inp))
+        fit += 1.0 - error
+    #Normalized for the size of the database:
+    #average normalized euclidian error over instances
+    return fit/float(len(problem_db))
+
+
+def activate(vector_weights, in_pattern):
+    '''Computes and returns the output activation of a layered FF neural
+    network having the given vector of weights and the input pattern'''
+
+    n_layers = len(vector_weights)
+    activation = in_pattern
+
+    for i in xrange(n_layers):
+        activation = np.dot(np.array(activation), vector_weights[i])
+        activation = np.tanh(activation)
+    return np.array(activation)
+
+
+def evaluate_no_pybrain(ind, problem_db, lbl_db):
+    """Evaluate indiv NN on nb_instances
+    with input=problem_db and output=lbl_db"""
+    fit = 0
+
+    for idx, inp in enumerate(problem_db):
+        nn_answer = activate(ind, inp)
         #Error on each instance (euclidian distance to right answer)
         #is normalized between 0 and 1
         error = np.linalg.norm(np.subtract(nn_answer, lbl_db[idx])) / \
@@ -877,6 +967,11 @@ if __name__ == "__main__":
         "/" + OUT_FOLDER + "/coding_size_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     CODING_SIZE_LOG_FILE = open(CODING_SIZE_LOG_FILENAME, 'w')
+    WEIGHT_NORM_LOG_FILENAME = "logs/" +\
+        CONFIG.split("/")[-1].split(".")[0] +\
+        "/" + OUT_FOLDER + "/weight_norm_" +\
+        str(datetime.datetime.now()).replace(" ", "-") + ".log"
+    WEIGHT_NORM_LOG_FILE = open(WEIGHT_NORM_LOG_FILENAME, 'w')
 ###############################################################################
     # 1 output for logical binary problems
     N_OUT = int(PARAMS["Task"]["outputs"])
@@ -910,6 +1005,9 @@ if __name__ == "__main__":
         N_LINKS = N_IN * NEUR_HID_LAYER + (N_HID - 1) * NEUR_HID_LAYER**2 +\
             NEUR_HID_LAYER * N_OUT
     TGT_SIZE = int(math.ceil(max(1, math.log(N_LINKS, len(SYMBOLS)))))
+    hid_shape = [NEUR_HID_LAYER for _ in xrange(N_HID)]
+    nn_shape = tuple([N_IN] + hid_shape + [N_OUT])
+
 #############################Evolutionary parameters###########################
     MU = int(PARAMS['EA']['mu'])  # 10
     NB_GENERATIONS = int(PARAMS['EA']['generations'])  # 15
@@ -948,8 +1046,10 @@ if __name__ == "__main__":
                                                        (START_CODON,
                                                         END_CODON),
                                                        pleio=PLEIOTROPY)
-        net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
-                               neur_per_hid=NEUR_HID_LAYER)
+        #net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
+        #                       neur_per_hid=NEUR_HID_LAYER)
+        net = map_to_mlp_no_pybrain(codons, N_IN, N_OUT, n_hidden=N_HID,
+                                    neur_per_hid=NEUR_HID_LAYER)
         individual = (g, 0.0, codons, PRETTY_STRING, net, c_size)
         POPULATION[i] = individual
     #print "\n", [indiv[2] for indiv in diversity(POPULATION, N_LINKS)[2]]
@@ -979,10 +1079,12 @@ if __name__ == "__main__":
                                       str(PROBLEM_SIZE)).format(i))]
                 PROBLEM_DB.append(input_vector)
                 LABEL_DB.append(task(input_vector, each_task))
+
         INSTANCES_DB = []
         LABEL_INST_DB = []
         DB_SIZE = int(float(PARAMS['Task']['trainingfraction']) *
                       TOTAL_INSTANCES)
+
         if DB_SIZE != -1:
             index_instances = np.random.choice(xrange(TOTAL_INSTANCES),
                                                DB_SIZE, replace=False)
@@ -995,13 +1097,13 @@ if __name__ == "__main__":
         TIME_GEN_LOG = []
 
         PRETTY_STRING = ""
-
         #Initial population: mu individuals, valid ones
         #all random links correctly encoded
         for i in xrange(MU):
             net = POPULATION[i][4]
             #Evaluate initial population
-            fitness = evaluate(net, INSTANCES_DB, LABEL_INST_DB)
+            #fitness = evaluate(net, INSTANCES_DB, LABEL_INST_DB)
+            fitness = evaluate_no_pybrain(net, INSTANCES_DB, LABEL_INST_DB)
             POPULATION[i] = (POPULATION[i][0], fitness, POPULATION[i][2],
                              POPULATION[i][3], POPULATION[i][4],
                              POPULATION[i][5])
@@ -1030,10 +1132,14 @@ if __name__ == "__main__":
                                                                (START_CODON,
                                                                 END_CODON),
                                                                pleio=PLEIOTROPY)
-                net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
-                                       neur_per_hid=NEUR_HID_LAYER)
+                #net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
+                #                       neur_per_hid=NEUR_HID_LAYER)
+                net = map_to_mlp_no_pybrain(codons, N_IN, N_OUT,
+                                            n_hidden=N_HID,
+                                            neur_per_hid=NEUR_HID_LAYER)
                 #Evaluate children
-                fitness = evaluate(net, INSTANCES_DB, LABEL_INST_DB)
+                #fitness = evaluate(net, INSTANCES_DB, LABEL_INST_DB)
+                fitness = evaluate_no_pybrain(net, INSTANCES_DB, LABEL_INST_DB)
                 individual = (child[:], fitness, codons, PRETTY_STRING,
                               net, c_size)
                 children[index] = individual
@@ -1067,11 +1173,15 @@ if __name__ == "__main__":
         formatted_coding_size = [[format_float(indiv[3])
                                  for indiv in generation]
                                  for generation in DIV_LOG]
+        formatted_weight_norm = [[format_float(indiv[5])
+                                  for indiv in generation]
+                                 for generation in DIV_LOG]
         LOG_FILE.write(str(formatted_fitness) + "\n")
         SIZE_LOG_FILE.write(str(formatted_size) + "\n")
         CODONS_LOG_FILE.write(str(formatted_codons) + "\n")
         GENES_PER_LINK_LOG_FILE.write(str(formatted_genes_per_link) + "\n")
         CODING_SIZE_LOG_FILE.write(str(formatted_coding_size) + "\n")
+        WEIGHT_NORM_LOG_FILE.write(str(formatted_weight_norm) + "\n")
 
         #transfer to next task: best individual of last generation
         max_fitness = POPULATION[0][1]
@@ -1091,8 +1201,11 @@ if __name__ == "__main__":
                                                                (START_CODON,
                                                                 END_CODON),
                                                                pleio=PLEIOTROPY)
-                net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
-                                       neur_per_hid=NEUR_HID_LAYER)
+                #net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
+                #                       neur_per_hid=NEUR_HID_LAYER)
+                net = map_to_mlp_no_pybrain(codons, N_IN, N_OUT,
+                                            n_hidden=N_HID,
+                                            neur_per_hid=NEUR_HID_LAYER)
                 individual = (altered_copy, 0.0, codons,
                               PRETTY_STRING, net, c_size)
                 POPULATION[index] = individual
@@ -1105,7 +1218,7 @@ if __name__ == "__main__":
     CODONS_LOG_FILE.close()
     GENES_PER_LINK_LOG_FILE.close()
     CODING_SIZE_LOG_FILE.close()
-
+    WEIGHT_NORM_LOG_FILE.close()
     if VERBOSE:
         TIME_END = time.time()
         print "\nIt took: ", str(TIME_END - TIME_START), " seconds"
