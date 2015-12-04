@@ -748,39 +748,6 @@ def levenshtein(str1, str2):
     return previous_row[-1]
 
 
-def weight_difference(codons1, codons2, n_links):
-    '''2-norm of the difference of link weights
-    between expressed genes in a genotype'''
-    difference = 0.0
-
-    target_set = set(xrange(n_links))
-    grouped_codons1 = [[codon_id, [codon[1] for codon in codons1
-                                   if codon[0] == codon_id]]
-                       for codon_id in target_set]
-    grouped_codons2 = [[codon_id, [codon[1] for codon in codons2
-                                   if codon[0] == codon_id]]
-                       for codon_id in target_set]
-    for i in target_set:
-        weight1 = 0.0
-        if i in [codon[0] for codon in grouped_codons1]:
-            gene_1 = [w1 for w1 in codon[1] if codon[0] == target_set
-                      for codon in grouped_codons1]
-            print gene_1
-            print sum(gene_1) / float(len(gene_1))
-            weight1 = sum(gene_1) / float(len(gene_1))
-
-        weight2 = 0.0
-        if i in [codon[0] for codon in grouped_codons2]:
-            gene_2 = [w1 for w1 in codon[1] if codon[0] == target_set
-                      for codon in grouped_codons2]
-            print gene_2
-            print sum(gene_2) / float(len(gene_2))  # TODO weight2
-
-        difference = difference + (weight1 - weight2) * (weight1 - weight2)
-
-    return np.sqrt(difference)
-
-
 def stats_codons(l_codons, genome, n_links):
     '''Computes some statistics on an individual, mainly regarding coding genes
        in the genome, cf. below for details.
