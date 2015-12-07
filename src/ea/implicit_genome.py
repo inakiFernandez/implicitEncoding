@@ -805,7 +805,13 @@ def diversity(pop, nb_link):
                 len(list(flatten(indiv[4])))
         else:
             weight_norm = 0.0
-        vector_stats.append(stats + [indiv[5] / stats[2], float(indiv[5]),
+
+        if stats[2] != 0.0:
+            coding_frac = indiv[5] / stats[2]
+        else:
+            coding_frac = 0.0
+
+        vector_stats.append(stats + [coding_frac, float(indiv[5]),
                                      weight_norm])
     #length = len(pop)
     #nb_combinations = np.math.factorial(length) /\
