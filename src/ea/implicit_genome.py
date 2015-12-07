@@ -613,8 +613,6 @@ def map_to_mlp_no_pybrain(codon_list, n_in, n_out, n_hidden=0, neur_per_hid=0,
                                                    (neur_per_hid,
                                                     neur_per_hid))
     return weight_vectors
-    #TODO write evaluate() function using weight vector, and thus compute
-    #NN activation
 
 
 def extract_codons(genome, target_size, limit_codons, max_weight=1.0,
@@ -802,9 +800,13 @@ def diversity(pop, nb_link):
         #        if j == i:
         #            differences[(i, i)] = 0.0
         stats = stats_codons(indiv[2], indiv[0], nb_link)
+        if len(list(flatten(indiv[4]))) != 0:
+            weight_norm = np.linalg.norm(list(flatten(indiv[4]))) /\
+                len(list(flatten(indiv[4])))
+        else:
+            weight_norm = 0.0
         vector_stats.append(stats + [indiv[5] / stats[2], float(indiv[5]),
-                                     np.linalg.norm(list(flatten(indiv[4]))) /
-                                     len(list(flatten(indiv[4])))])
+                                     weight_norm])
     #length = len(pop)
     #nb_combinations = np.math.factorial(length) /\
     #    (2 * np.math.factorial(length - 2))
@@ -812,8 +814,7 @@ def diversity(pop, nb_link):
     #return result, differences,
     return vector_stats
     #number of codons, avg number of genes per link, genome size, coding genome
-    #fraction, coding genome size
-#TODO diversity from codon stats
+    #fraction, coding genome size, weight vector norm
 
 
 def evaluate(ind, problem_db, lbl_db):
@@ -946,8 +947,7 @@ if __name__ == "__main__":
     N_HID = int(PARAMS['NN']['nhidlay'])  # 1
     NEUR_HID_LAYER = int(PARAMS['NN']['neurperlay'])  # 2
     #Proportion of junk genes in-between genes on initialization of the genome
-    #TODO Read from file
-    FRAC_JUNK_GENES = 0.0
+    FRAC_JUNK_GENES = float(PARAMS['Encoding']['junk'])
     SYMBOLS = ['0', '1']
     #Number of nucleotids for weight field on initialization
     #(the more nucleotids, the finer the resolution of initial weights)
@@ -1051,7 +1051,6 @@ if __name__ == "__main__":
         LABEL_INST_DB = []
         DB_SIZE = int(float(PARAMS['Task']['trainingfraction']) *
                       TOTAL_INSTANCES)
-
         if DB_SIZE != -1:
             index_instances = np.random.choice(xrange(TOTAL_INSTANCES),
                                                DB_SIZE, replace=False)
@@ -1094,11 +1093,10 @@ if __name__ == "__main__":
             #Note: it is easier to break a link gene than creating a new one
             for index, i in enumerate(parents):
                 child = mutate(i[0][:], mut_prob)
-                codons, PRETTY_STRING, c_size = extract_codons(child[:],
-                                                               TGT_SIZE,
-                                                               (START_CODON,
-                                                                END_CODON),
-                                                               pleio=PLEIOTROPY)
+                codons, PRETTY_STRING, c_size = \
+                    extract_codons(child[:], TGT_SIZE,
+                                   (START_CODON, END_CODON),
+                                   pleio=PLEIOTROPY)
                 #net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
                 #                       neur_per_hid=NEUR_HID_LAYER)
                 net = map_to_mlp_no_pybrain(codons, N_IN, N_OUT,
@@ -1164,10 +1162,9 @@ if __name__ == "__main__":
             #Initialize population with mutated copies of best_individual
             for index in xrange(MU):
                 altered_copy = mutate(best_individual[0][:], mut_prob)
-                codons, PRETTY_STRING, c_size = extract_codons(g, TGT_SIZE,
-                                                               (START_CODON,
-                                                                END_CODON),
-                                                               pleio=PLEIOTROPY)
+                codons, PRETTY_STRING, c_size =\
+                    extract_codons(g, TGT_SIZE, (START_CODON, END_CODON),
+                                   pleio=PLEIOTROPY)
                 #net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
                 #                       neur_per_hid=NEUR_HID_LAYER)
                 net = map_to_mlp_no_pybrain(codons, N_IN, N_OUT,
