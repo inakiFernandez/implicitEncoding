@@ -1051,6 +1051,7 @@ if __name__ == "__main__":
         LABEL_INST_DB = []
         DB_SIZE = int(float(PARAMS['Task']['trainingfraction']) *
                       TOTAL_INSTANCES)
+
         if DB_SIZE != -1:
             index_instances = np.random.choice(xrange(TOTAL_INSTANCES),
                                                DB_SIZE, replace=False)
