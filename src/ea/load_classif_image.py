@@ -9,7 +9,7 @@ import sys
 
 
 def read_image(name, folder="../../image_db"):
-    r = png.Reader(folder + '/' + name)
+    r = png.Reader(folder + '/' + name.strip())
     f = r.asDirect()
 
     width = f[0]
