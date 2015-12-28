@@ -1,9 +1,8 @@
 """
     Data structures and functions associated with the creation
-    mapping to neural net (pybrain), mutation, recombination
+    mapping to neural net, mutation, recombination
 """
 # -*- coding: utf-8 -*-
-#TODO General list: config global params(probas, start and end codons, other)
 import time
 import random
 import sys
