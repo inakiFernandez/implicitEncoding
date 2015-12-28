@@ -11,52 +11,57 @@ import plot
 import os
 import numpy as np
 
+type_file_list = ["codons", "fitness", "test", "coding_size", "gpl",
+                  "weight_norm", "size", "pleio"]
 folder = sys.argv[1]
-result_avg = []
-type_file = sys.argv[2]
-out_folder_name = folder.split("/")[1] + "-" + type_file
-if not os.path.exists(out_folder_name):
-    os.mkdir(out_folder_name)
-for subdir, dirs, files in os.walk(folder):
-    for fname in files:
-        if fname.endswith(".log") and fname.startswith(type_file):
+global_out_folder = folder.split("/")[1]
+if not os.path.exists(global_out_folder):
+    os.mkdir(global_out_folder)
+for type_file in type_file_list:
+    out_folder_name = global_out_folder + "/" + folder.split("/")[1] +\
+        "-" + type_file
+    result_avg = []
+    if not os.path.exists(out_folder_name):
+        os.mkdir(out_folder_name)
+    for subdir, dirs, files in os.walk(folder):
+        for fname in files:
+            if fname.endswith(".log") and fname.startswith(type_file):
 
-            f = open(os.path.join(subdir, fname), "r")
+                f = open(os.path.join(subdir, fname), "r")
 
-            list_lines = f.readlines()
+                list_lines = f.readlines()
 
-            experiments = []
-            average_list = []
-            for exp in list_lines:
-                list_str = []
-                for elt in exp[0:-1].split("], ["):
-                    list_str.append(elt.replace('[', "").replace(']', ""))
+                experiments = []
+                average_list = []
+                for exp in list_lines:
+                    list_str = []
+                    for elt in exp[0:-1].split("], ["):
+                        list_str.append(elt.replace('[', "").replace(']', ""))
 
-                floats = []
+                    floats = []
 
-                for gen in list_str:
-                    gener = []
+                    for gen in list_str:
+                        gener = []
 
-                    for ind in re.findall(r"'([^']*)'", gen):
-                        gener.append(float(ind))
-                    floats.append(gener)
-                    average_list.append(np.median(gener))
-                experiments.append(floats)
-            for index, x in enumerate(experiments):
-                plot.draw_data([(subdir.split("/")[2] + "-" +
-                                 str(index) + "-" + type_file, zip(*x))],
+                        for ind in re.findall(r"'([^']*)'", gen):
+                            gener.append(float(ind))
+                        floats.append(gener)
+                        average_list.append(np.median(gener))
+                    experiments.append(floats)
+                #for index, x in enumerate(experiments):
+                #    plot.draw_data([(subdir.split("/")[2] + "-" +
+                #                     str(index) + "-" + type_file, zip(*x))],
+                #                   out_folder=out_folder_name)
+
+                result = []
+
+                for ind_exp in xrange(len(experiments)):
+                    for x in xrange(len(experiments[ind_exp])):
+                        result.append(experiments[ind_exp][x])
+
+                plot.draw_data([(subdir.split("/")[2] + "-allIndiv-" +
+                                 type_file, zip(*result))],
                                out_folder=out_folder_name)
-
-            result = []
-
-            for ind_exp in xrange(len(experiments)):
-                for x in xrange(len(experiments[ind_exp])):
-                    result.append(experiments[ind_exp][x])
-
-            plot.draw_data([(subdir.split("/")[2] + "-allIndiv-" + type_file,
-                             zip(*result))],
-                           out_folder=out_folder_name)
-            result_avg.append(average_list)
-
-plot.draw_data([("median-" + type_file, result_avg)],
-               out_folder=out_folder_name)
+                result_avg.append(average_list)
+    #plot.draw_data([("median-" + type_file, result_avg)],
+    #               out_folder=out_folder_name)

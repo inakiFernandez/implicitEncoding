@@ -9,8 +9,8 @@ import random
 import sys
 import math
 import numpy as np
-from pybrain.structure import FeedForwardNetwork, LinearLayer
-from pybrain.structure import FullConnection, SigmoidLayer
+#from pybrain.structure import FeedForwardNetwork, LinearLayer
+#from pybrain.structure import FullConnection, SigmoidLayer
 import ConfigParser
 import itertools
 sys.path.insert(0, '../plots')
@@ -22,6 +22,7 @@ from pylab import subplot2grid
 import load_classif_image as classif
 import datetime
 import collections
+import os
 
 
 class PrettyFloat(float):
@@ -303,254 +304,6 @@ def create_genome(nb_links, fraction_junk_genes, nucleotids_per_gene,
     return genome
 
 
-def map_to_mlp_light(codon_list, n_in, n_out, n_hidden=0, neur_per_hid=0,
-                     polygene_strategy="avg"):  # bias=False(?)
-    """Map a list of coding genes (codons) to a Multilayer Fully-connected
-    Perceptron with given inputs, outputs, number of hidden layers and neurons
-    per hidden layer. This is done in a (pybrain) per-layer basis to speed up.
-    The effect of multiple codons targeting the same connection is determined
-    by the polygene_strategy (average by default)"""
-    mapped_net = None
-    if n_hidden <= 0:
-        num_links = n_in * n_out
-    else:
-        num_links = n_in * neur_per_hid + neur_per_hid * n_out + \
-            (n_hidden - 1) * (neur_per_hid * neur_per_hid)
-    #Neurons' IDs starts counting from 0 in the sequence:
-    #Input - Bias - Output - (Hidden)
-    #Neuron IDs are fixed and topology does not evolve for now
-    #Link order : cf. below
-    #Recurrent NNs? evolution of topology?
-
-    mapped_net = FeedForwardNetwork()
-
-    mapped_net.addInputModule(LinearLayer(n_in, name="i"))
-
-    mapped_net.addOutputModule(SigmoidLayer(n_out, name="o"))
-    list_connections = []
-    for layer in xrange(n_hidden):
-        mapped_net.addModule(SigmoidLayer(neur_per_hid, name="h" + str(layer)))
-
-    if n_hidden == 0:
-        connection = FullConnection(mapped_net["i"], mapped_net["o"],
-                                    name="ci")
-        mapped_net.addConnection(connection)
-        number_connections = n_in * n_out
-        list_connections.append((connection, number_connections))
-    else:
-        connection = FullConnection(mapped_net["i"], mapped_net["h0"],
-                                    name="ci")
-        mapped_net.addConnection(connection)
-        number_connections = n_in * neur_per_hid
-        list_connections.append((connection, number_connections))
-        for layer in xrange(n_hidden - 1):
-            connection = FullConnection(mapped_net["h" + str(layer)],
-                                        mapped_net["h" + str(layer + 1)],
-                                        name="ch" + str(layer))
-            mapped_net.addConnection(connection)
-            number_connections = neur_per_hid * neur_per_hid
-            list_connections.append((connection, number_connections))
-
-        connection = FullConnection(mapped_net["h" + str(n_hidden - 1)],
-                                    mapped_net["o"], name=("ch" +
-                                                           str(n_hidden - 1)))
-        mapped_net.addConnection(connection)
-        number_connections = neur_per_hid * n_out
-        list_connections.append((connection, number_connections))
-
-    #[[Bias??]] if bias: b = BiasUnit(name = "b");  mapped_net.addModule(b)
-
-    #Loop link codons
-    #Link ordering:
-    #    No hidden layer:
-    #              0        1     ....
-    #           [i0,o0], [i1,o0], .... , [i0,o1], [i1,o1], ...., [iN,oN']
-    #   W. hidden layer(s):
-    #           [i0,h00],[i1,h00],...,[i0,h01],...
-    #           [h00,h10],[h01,h10],..., [hK0,o0], [hK1,o0],..., [hKN'',oN']
-    target_set = set(xrange(num_links))
-    grouped_codons = [[codon_id, [codon[1] for codon in codon_list
-                                  if codon[0] == codon_id]]
-                      for codon_id in target_set]
-    weights = []
-    #Loop over all possible link identifiers
-    for link in xrange(num_links):
-        #Retrieve the list of weights of codons pointing to current link
-        gene_weights = [codon[1] for codon
-                        in grouped_codons if codon[0] == link]
-        gene_weights = list(itertools.chain.from_iterable(gene_weights))
-
-        #if there is no codon pointing to current link, the link is still
-        #created, but the weight is 0.0
-        if len(gene_weights) == 0:
-            weight = 0.0
-        else:
-            #Different polygenic schemes, dominance etc...
-            #i.e. how to integrate several weights of codons pointing to the
-            #same link into a single weight to assign to the link of neural net
-            #Average
-            if polygene_strategy == "avg":
-                weight = sum(gene_weights)/float(len(gene_weights))
-            #other schemes?
-        weights.append(weight)
-
-    index_link = 0
-    for conn in list_connections:
-        number = conn[1]
-        link = conn[0]
-        for i in xrange(number):
-            link.params[i] = weights[index_link]
-            index_link = index_link + 1
-    mapped_net.sortModules()
-
-    return mapped_net
-
-
-def map_to_standard_mlp(codon_list, n_in, n_out, n_hidden=0, neur_per_hid=0,
-                        polygene_strategy="avg"):  # bias=False(?)
-    """Map a list of coding genes (codons) to a Multilayer Fully-connected
-    Perceptron with given inputs, outputs, number of hidden layers and neurons
-    per hidden layer. The effect of multiple codons targeting the same
-    connection is determined by the polygene_strategy (average by default)"""
-    mapped_net = None
-    if n_hidden <= 0:
-        num_links = n_in * n_out
-    else:
-        num_links = n_in * neur_per_hid + neur_per_hid * n_out + \
-            (n_hidden - 1) * (neur_per_hid * neur_per_hid)
-    #Neurons' IDs starts counting from 0 in the sequence:
-    #Input - Bias - Output - (Hidden)
-    #Neuron IDs are fixed and topology does not evolve for now
-    #Link order : cf. below
-    #Recurrent NNs? evolution of topology?
-
-    mapped_net = FeedForwardNetwork()
-
-    for idx in xrange(n_in):
-        mapped_net.addInputModule(LinearLayer(1, name="i" + str(idx)))
-
-    for idx in xrange(n_out):
-        mapped_net.addOutputModule(SigmoidLayer(1, name="o" + str(idx)))
-
-    for layer in xrange(n_hidden):
-        for idx in xrange(neur_per_hid):
-            mapped_net.addModule(SigmoidLayer(1, name="h" + str(layer)
-                                              + "-" + str(idx)))
-
-    #[[Bias??]] if bias: b = BiasUnit(name = "b");  mapped_net.addModule(b)
-
-    #Loop link codons
-    #Link ordering:
-    #    No hidden layer:
-    #              0        1     ....
-    #           [i0,o0], [i1,o0], .... , [i0,o1], [i1,o1], ...., [iN,oN']
-    #   W. hidden layer(s):
-    #           [i0,h00],[i1,h00],...,[i0,h01],...
-    #           [h00,h10],[h01,h10],..., [hK0,o0], [hK1,o0],..., [hKN'',oN']
-    input_idx = 0  # for the input neuron
-    output_idx = 0  # for the output neuron
-    h_layer = 0  # for looping over hidden layers
-
-    target_set = set(xrange(num_links))
-    grouped_codons = [[codon_id, [codon[1] for codon in codon_list
-                                  if codon[0] == codon_id]]
-                      for codon_id in target_set]
-    #Loop over all possible link identifiers
-    for link in xrange(num_links):
-        #Retrieve the list of weights of codons pointing to current link
-        gene_weights = [codon[1] for codon
-                        in grouped_codons if codon[0] == link]
-        gene_weights = list(itertools.chain.from_iterable(gene_weights))
-
-        #if there is no codon pointing to current link, the link is still
-        #created, but the weight is 0.0
-        if len(gene_weights) == 0:
-            weight = 0.0
-        else:
-            #Different polygenic schemes, dominance etc...
-            #i.e. how to integrate several weights of codons pointing to the
-            #same link into a single weight to assign to the link of neural net
-            #Average
-            if polygene_strategy == "avg":
-                weight = sum(gene_weights)/float(len(gene_weights))
-            #other schemes?
-        #Compute the input and output neurons for current link
-        #Single Perceptron w/o hidden layer
-        if n_hidden == 0:
-            in_neuron = mapped_net["i" + str(input_idx)]
-            out_neuron = mapped_net["o" + str(output_idx)]
-            if input_idx == n_in - 1:
-                #To first in neuron for next out neuron
-                input_idx = 0
-                if output_idx == n_out - 1:
-                    #Finished setting up all links (perceptron w/o hidd. layer)
-                    output_idx = 0
-                    conn = FullConnection(in_neuron, out_neuron,
-                                          name=str(link))
-                    mapped_net.addConnection(conn)
-                    conn.params[0] = weight
-                    break
-                else:
-                    #Next out neuron
-                    output_idx = output_idx + 1
-            else:
-                #Next in neuron
-                input_idx = input_idx + 1
-        #Multi-layer perceptron
-        else:
-            if h_layer == 0:
-                in_neuron = mapped_net["i" + str(input_idx)]
-                out_neuron = mapped_net["h" + str(h_layer) +
-                                        "-" + str(output_idx)]
-                if input_idx == n_in - 1:
-                    input_idx = 0
-                    if output_idx == neur_per_hid - 1:
-                        output_idx = 0
-                        h_layer = h_layer + 1
-                    else:
-                        output_idx = output_idx + 1
-                else:
-                    input_idx = input_idx + 1
-            else:
-                if h_layer < n_hidden:
-                    in_neuron = mapped_net["h" + str(h_layer - 1) + "-" +
-                                           str(input_idx)]
-                    out_neuron = mapped_net["h" + str(h_layer)
-                                            + "-" + str(output_idx)]
-                    if input_idx == neur_per_hid - 1:
-                        input_idx = 0
-                        if output_idx == neur_per_hid - 1:
-                            output_idx = 0
-                            h_layer = h_layer + 1
-                        else:
-                            output_idx = output_idx + 1
-                    else:
-                        input_idx = input_idx + 1
-                else:
-                    in_neuron = mapped_net["h" + str(h_layer - 1) + "-" +
-                                           str(input_idx)]
-                    out_neuron = mapped_net["o" + str(output_idx)]
-                    if input_idx == neur_per_hid - 1:
-                        input_idx = 0
-                        if output_idx == n_out - 1:
-                            output_idx = 0
-                            conn = FullConnection(in_neuron, out_neuron,
-                                                  name=str(link))
-                            mapped_net.addConnection(conn)
-                            conn.params[0] = weight
-                            break
-                        else:
-                            output_idx = output_idx + 1
-                    else:
-                        input_idx = input_idx + 1
-        conn = FullConnection(in_neuron, out_neuron, name=str(link))
-        mapped_net.addConnection(conn)
-        conn.params[0] = weight
-
-    mapped_net.sortModules()
-    return mapped_net
-
-
 def map_to_mlp_no_pybrain(codon_list, n_in, n_out, n_hidden=0, neur_per_hid=0,
                           polygene_strategy="avg"):  # bias=False(?)
     """Mapping a codon list (id_codon, weight) to a given neural structure,
@@ -627,11 +380,10 @@ def xtract_codons(genome, target_size, limit_codons, max_weight=1.0,
     idx = 0
     out_str = ""
     gene_str = ""
-    spacing = "  ||  "  # " \n---\n "
+    spacing = "  ||  "
     separator = " - "
     coding_part_size = 0
     codon_limit_list = []
-    previous_gene_end = -1
     while idx in xrange(len(genome)):
         #If there is a start codon, then read a whole gene
         if "".join(genome[idx:]).startswith(start_codon):
@@ -686,24 +438,36 @@ def xtract_codons(genome, target_size, limit_codons, max_weight=1.0,
             out_str = out_str + str(genome[idx])
             idx = idx + 1
     #Measuring coding part
-    #lower_bound = -1
-    upper_bound = -1
     coding_part_size = 0
     sum_per_gene_coding_size = 0
-    for codon_limits in codon_limit_list:
-        l1 = codon_limits[0]
-        l2 = codon_limits[1]
-        if l1 > upper_bound:
-            #Separated gene
-            coding_part_size = coding_part_size + (l2 - l1)
-            upper_bound = l2
-            #lower_bound = l1
-        else:
-            coding_part_size = coding_part_size + (l2 - upper_bound)
-            upper_bound = l2
-        sum_per_gene_coding_size = sum_per_gene_coding_size + l2 - l1
+
+    if len(codon_limit_list) > 0:
+        i = 0
+        start_gene = codon_limit_list[i][0]
+        end_gene = codon_limit_list[i][1]
+        sum_per_gene_coding_size = sum_per_gene_coding_size +\
+            codon_limit_list[i][1] - codon_limit_list[i][0]
+        i = i + 1
+        finished = (i == len(codon_limit_list))
+        while not finished:
+            codon_limits = codon_limit_list[i]
+            l1 = codon_limits[0]
+            l2 = codon_limits[1]
+            if l1 >= end_gene:
+                #separated gene
+                coding_part_size = coding_part_size + end_gene - start_gene
+                start_gene = l1
+                end_gene = l2
+            else:
+                end_gene = l2
+            i = i + 1
+            finished = (i == len(codon_limit_list))
+            sum_per_gene_coding_size = sum_per_gene_coding_size + l2 - l1
+        #add last gene's size
+        coding_part_size = coding_part_size + end_gene - start_gene
 
     codon_list = []
+
     for codon_limits in codon_limit_list:
         gene = genome[codon_limits[0]:codon_limits[1]]
         tgt = gene[len(start_codon):len(start_codon) + target_size]
@@ -716,85 +480,6 @@ def xtract_codons(genome, target_size, limit_codons, max_weight=1.0,
                                len(weight_string) - max_weight])
 
     return codon_list, out_str, coding_part_size, sum_per_gene_coding_size
-
-
-def extract_codons(genome, target_size, limit_codons, max_weight=1.0,
-                   pleio=False):
-    """Extracts the sequence of coding genes from genome, using given start
-    and end codons and with given targeted link string size. Connection weight
-    is capped in [-max_weight, max_weight]. Pleiotropy can be switched on and
-    off. It also returns a user-friendly representation of the genomes
-    with segmentated and color-coded codons """
-    start_codon = limit_codons[0]
-    end_codon = limit_codons[1]
-    codon_list = []
-    idx = 0
-    out_str = ""
-    gene_str = ""
-    spacing = "  ||  "  # " \n---\n "
-    separator = " - "
-    coding_part_size = 0
-    while idx in xrange(len(genome)):
-        #If there is a start codon, then read a whole gene
-        if "".join(genome[idx:]).startswith(start_codon):
-            gene_start_index = idx
-            idx = idx + len(start_codon)
-
-            gene_str = spacing + clr.Back.YELLOW \
-                + "".join(genome[gene_start_index:idx]) +\
-                clr.Back.RESET + separator
-            #Read target field: it corresponds to the targeted link ID
-            tgt = genome[idx:idx + target_size]
-            gene_str = gene_str + clr.Back.CYAN + "".join(tgt) +\
-                clr.Back.RESET + separator
-            idx = idx + target_size
-            j = idx
-            #Look for the end codon, in order to delimitate the weight field:
-            #the field storing the weight
-            while not("".join(genome[j:]).startswith(end_codon)) and\
-                    j < len(genome):
-                j = j + 1
-            #If there was an end codon, then the gene was valid, so we add it
-            #to the list of codons (ID, weight)
-            if j < len(genome):
-                weight_string = genome[idx:j]
-                gene_str = gene_str + clr.Back.GREEN +\
-                    "".join(weight_string) + clr.Back.RESET + separator
-                if len(weight_string) == 0:
-                    codon_list.append([int("".join(tgt), 2), 0.0])
-                else:
-                    codon_list.append([
-                        int("".join(tgt), 2),
-                        2.0 * max_weight * weight_string.count("1") /
-                        len(weight_string) - max_weight])
-
-                gene_str = gene_str + clr.Back.YELLOW + \
-                    "".join(genome[j:j + len(end_codon)]) +\
-                    clr.Back.RESET + spacing
-
-                out_str = out_str + gene_str
-                gene_str = ""
-                coding_part_size = coding_part_size +\
-                    (j + len(end_codon) - gene_start_index)
-            else:
-                #if genome read is finished and the current gene is not ended
-                #it is not a valid gene, and it is not added to the codon list
-                out_str = out_str + "".join(genome[gene_start_index:])
-                gene_str = ""
-                break
-            if pleio:
-                #If pleiotropy is activated, continue reading just after
-                #previous gene's start codon
-                idx = idx - target_size
-            else:
-                #Continue reading after end codon otherwise
-                idx = j + len(end_codon)
-        #If there is not a start codon, keep reading
-        else:
-            out_str = out_str + str(genome[idx])
-            idx = idx + 1
-
-    return codon_list, out_str, coding_part_size
 ###############################################################################
 
 
@@ -823,33 +508,6 @@ def mutate(genome, probs):
     return offspring
 
 
-def levenshtein(str1, str2):
-    '''Levenshtein distance between s1 and s2. Code extracted from Wikibooks.
-       It corresponds to the minimal number of deletions, substitutions
-       and insertions to transform s1 into s2 (or vice-versa)
-    '''
-    if len(str1) < len(str2):
-        return levenshtein(str2, str1)
-
-    # len(str1) >= len(str2)
-    if len(str2) == 0:
-        return len(str1)
-
-    previous_row = range(len(str2) + 1)
-    for i, char1 in enumerate(str1):
-        current_row = [i + 1]
-        for j, char2 in enumerate(str2):
-            # j+1 instead of j since previous_row and current_row are
-            #one character longer than s2
-            insertions = previous_row[j + 1] + 1
-            deletions = current_row[j] + 1
-            substitutions = previous_row[j] + (char1 != char2)
-            current_row.append(min(insertions, deletions, substitutions))
-        previous_row = current_row
-
-    return previous_row[-1]
-
-
 def stats_codons(l_codons, genome, n_links):
     '''Computes some statistics on an individual, mainly regarding coding genes
        in the genome, cf. below for details.
@@ -860,30 +518,11 @@ def stats_codons(l_codons, genome, n_links):
     grouped_codons = [[codon_id, [codon[1] for codon in l_codons
                                   if codon[0] == codon_id]]
                       for codon_id in target_set]
-    print "LENGTH GROUPED CODONS: ", len(grouped_codons)
     codons_per_link = [len(link[1]) for link in grouped_codons]
 
     result[0] = float(len(l_codons))
     result[1] = np.average(codons_per_link)
     result[2] = float(len(genome))
-    return result
-
-
-def difference_individuals(ind1, ind2, nlink):
-    '''Computes the difference between two individuals based on their
-       (precomputed) statistics. Several difference values can be returned,
-       depending on the chosen criterion.'''
-    lcodons1 = ind1[2]
-    lcodons2 = ind2[2]
-    genome1 = ind1[0]
-    genome2 = ind2[0]
-    stats1 = stats_codons(lcodons1, genome1, nlink)
-    stats2 = stats_codons(lcodons2, genome2, nlink)
-    diff_vector = np.absolute(np.subtract(stats1, stats2))
-    #c1 for number of codons, c2 for codons per link,
-    #c3 for size of coding part
-    coeff = [0.0, 0.0, 1.0]
-    result = np.dot(diff_vector, coeff)
     return result
 
 
@@ -915,28 +554,17 @@ def diversity(pop, nb_link):
             coding_frac = float(indiv[5]) / float(len(indiv[0]))
         else:
             coding_frac = 0.0
+
         if float(indiv[6]) != 0.0:
             deg_pleio = 1 - (float(indiv[5]) / float(indiv[6]))
         else:
             deg_pleio = 0.0
-
+        if deg_pleio > 1.0 or deg_pleio < 0.0:
+            print "Pleio. deg: ", deg_pleio
         vector_stats.append(stats +
-                            [1.0 - coding_frac, float(indiv[5]), weight_norm,
+                            [coding_frac, float(indiv[5]), weight_norm,
                              np.linalg.norm(np.subtract(list(flatten(indiv[4])),
-                                                        centroid)), deg_pleio])
-        print
-        print
-        print "Genome:"
-        print "".join(indiv[0])
-        print "Pretty"
-        print indiv[3]
-        print "TotalSize: ", len(indiv[0])
-        print "Coding part size: ", indiv[5]  # coding part size
-        print "Pleio size: ", indiv[6]  # coding part size
-        print "Junk: ", 1.0 - coding_frac
-        print "Pleio: ", deg_pleio
-        print "NumberCodons: ", stats[0]
-        print "Codons per link (avg): ", stats[1]
+                                            centroid)), deg_pleio])
     return vector_stats
     #number of codons, avg number of genes per link, genome size, coding genome
     #fraction, coding genome size, weight vector norm
@@ -1021,7 +649,7 @@ def survive(population, mu_nb_par):
 
 if __name__ == "__main__":
     clr.init()
-    CONFIG = sys.argv[1]  # "config.ini"
+    CONFIG = sys.argv[1]
     OUT_FOLDER = sys.argv[2]
     PARSER = ConfigParser.ConfigParser()
     PARSER.read(CONFIG)
@@ -1030,43 +658,54 @@ if __name__ == "__main__":
     for s in PARSER.sections():
         PARAMS[s] = map_config(s)
 
-    VERBOSE = bool(PARAMS['EA']['verbose'])  # True
+    VERBOSE = bool(PARAMS['EA']['verbose'])
 
     TASK_SEQUENCE_LIST = PARAMS["Task"]["tasksequence"].split(",")
+    OUT_FOLDER_NAME = CONFIG.split("/")[-1].split(".")[0]
 
-    LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] + "/" +\
+    if not os.path.exists("logs/" + OUT_FOLDER_NAME):
+        os.mkdir("logs/" + OUT_FOLDER_NAME)
+
+    if not os.path.exists("logs/" + OUT_FOLDER_NAME + "/" + OUT_FOLDER):
+        os.mkdir("logs/" + OUT_FOLDER_NAME + "/" + OUT_FOLDER)
+
+    LOG_FILENAME = "logs/" + OUT_FOLDER_NAME + "/" +\
         OUT_FOLDER + "/fitness_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     LOG_FILE = open(LOG_FILENAME, 'w')
-    NN_LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] + "/" +\
+    TEST_LOG_FILENAME = "logs/" + OUT_FOLDER_NAME + "/" +\
+        OUT_FOLDER + "/test_" +\
+        str(datetime.datetime.now()).replace(" ", "-") + ".log"
+    TEST_LOG_FILE = open(TEST_LOG_FILENAME, 'w')
+    NN_LOG_FILENAME = "logs/" + OUT_FOLDER_NAME + "/" +\
         OUT_FOLDER + "/neural_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     NN_LOG_FILE = open(NN_LOG_FILENAME, 'w')
-    SIZE_LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] + "/" +\
+    SIZE_LOG_FILENAME = "logs/" + OUT_FOLDER_NAME + "/" +\
         OUT_FOLDER + "/size_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     SIZE_LOG_FILE = open(SIZE_LOG_FILENAME, 'w')
-    CODONS_LOG_FILENAME = "logs/" + CONFIG.split("/")[-1].split(".")[0] +\
+    CODONS_LOG_FILENAME = "logs/" + OUT_FOLDER_NAME +\
         "/" + OUT_FOLDER + "/codons_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     CODONS_LOG_FILE = open(CODONS_LOG_FILENAME, 'w')
     GENES_PER_LINK_LOG_FILENAME = "logs/" +\
-        CONFIG.split("/")[-1].split(".")[0] +\
+        OUT_FOLDER_NAME +\
         "/" + OUT_FOLDER + "/gpl_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     GENES_PER_LINK_LOG_FILE = open(GENES_PER_LINK_LOG_FILENAME, 'w')
     CODING_SIZE_LOG_FILENAME = "logs/" +\
-        CONFIG.split("/")[-1].split(".")[0] +\
+        OUT_FOLDER_NAME +\
         "/" + OUT_FOLDER + "/coding_size_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     CODING_SIZE_LOG_FILE = open(CODING_SIZE_LOG_FILENAME, 'w')
     WEIGHT_NORM_LOG_FILENAME = "logs/" +\
-        CONFIG.split("/")[-1].split(".")[0] +\
+        OUT_FOLDER_NAME +\
         "/" + OUT_FOLDER + "/weight_norm_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     WEIGHT_NORM_LOG_FILE = open(WEIGHT_NORM_LOG_FILENAME, 'w')
     PLEIO_LOG_FILENAME = "logs/" +\
-        CONFIG.split("/")[-1].split(".")[0] +\
+        OUT_FOLDER_NAME +\
         "/" + OUT_FOLDER + "/pleio_" +\
         str(datetime.datetime.now()).replace(" ", "-") + ".log"
     PLEIO_LOG_FILE = open(PLEIO_LOG_FILENAME, 'w')
@@ -1087,14 +726,10 @@ if __name__ == "__main__":
     #codons are more prone to disruptive variation? (are offspring viable?)
     #Grey-coding for links? minimizing "distances" between links?
     #Look for a symmetry in codons?
-    #START_CODON = "111100111000110010010010"
-    #END_CODON = "101011101101101100001111"
-    #START_CODON = "111010010100"
-    #END_CODON = "010100011011"
-    START_CODON = PARAMS['Encoding']['start']  # "101001010011"
-    END_CODON = PARAMS['Encoding']['end']  # "010110101100"
-    #START_CODON = "11010"
-    #END_CODON = "00110"
+
+    START_CODON = PARAMS['Encoding']['start']
+    END_CODON = PARAMS['Encoding']['end']
+
     PLEIOTROPY = bool(PARAMS['Encoding']['pleio'])
     if N_HID == 0:
         N_LINKS = N_IN * N_OUT
@@ -1106,8 +741,8 @@ if __name__ == "__main__":
     nn_shape = tuple([N_IN] + hid_shape + [N_OUT])
 
 #############################Evolutionary parameters###########################
-    MU = int(PARAMS['EA']['mu'])  # 10
-    NB_GENERATIONS = int(PARAMS['EA']['generations'])  # 15
+    MU = int(PARAMS['EA']['mu'])
+    NB_GENERATIONS = int(PARAMS['EA']['generations'])
     # number of children per parent
     PARENT_CHILDREN_RATIO = float(PARAMS['EA']['lambdapermu'])
     # parent/children ratio * mu == lambda nb of children
@@ -1132,27 +767,24 @@ if __name__ == "__main__":
 ###############################################################################
 ##########################Evolutionary algorithm###############################
     INTERTASK_LOG = []
-    POPULATION = [("", 0.0, [], "", None, 0.0, 0.0)] * MU
+    POPULATION = [("", 0.0, [], "", None, 0.0, 0.0, 0.0)] * MU
 
     #Initial genomes in population: mu individuals, valid ones
     #(all random links correctly encoded)
     for i in xrange(MU):
         g = create_genome(N_LINKS, FRAC_JUNK_GENES, NUCL_PER_WEIGHT,
                           (START_CODON, END_CODON), SYMBOLS)
-        codons, PRETTY_STRING, c_size = extract_codons(g, TGT_SIZE,
-                                                       (START_CODON,
-                                                        END_CODON),
-                                                       pleio=PLEIOTROPY)
-        _, _, coding_chars = extract_codons(g, TGT_SIZE,
-                                            (START_CODON, END_CODON),
-                                            pleio=False)
-        #net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
-        #                       neur_per_hid=NEUR_HID_LAYER)
+        codons, PRETTY_STRING, c_size, sum_genes_size =\
+            xtract_codons(g, TGT_SIZE, (START_CODON, END_CODON),
+                          pleio=PLEIOTROPY)
+        #Only consider codons with a valid (existing) targeted link
+        codons = [c for c in codons if c[0] < N_LINKS]
         net = map_to_mlp_no_pybrain(codons, N_IN, N_OUT, n_hidden=N_HID,
                                     neur_per_hid=NEUR_HID_LAYER)
-        individual = (g, 0.0, codons, PRETTY_STRING, net, coding_chars, c_size)
+        individual = (g, 0.0, codons, PRETTY_STRING, net, c_size,
+                      sum_genes_size, 0.0)
         POPULATION[i] = individual
-    #print "\n", [indiv[2] for indiv in diversity(POPULATION, N_LINKS)[2]]
+
 ###############################################################################
     #Total Time
     TIME_START = time.time()
@@ -1173,7 +805,7 @@ if __name__ == "__main__":
             #Generate all instances
             TOTAL_INSTANCES = len(SYMBOLS)**PROBLEM_SIZE
             for i in xrange(TOTAL_INSTANCES):
-                #binary in this case, different base for other symbol sets
+                #binary input patterns
                 input_vector = [float(k) for k in
                                 list(("{0:0%sb}" %
                                       str(PROBLEM_SIZE)).format(i))]
@@ -1182,34 +814,43 @@ if __name__ == "__main__":
 
         INSTANCES_DB = []
         LABEL_INST_DB = []
+        INSTANCES_TEST_DB = []
+        LABEL_TEST_DB = []
         DB_SIZE = int(float(PARAMS['Task']['trainingfraction']) *
                       TOTAL_INSTANCES)
 
         if DB_SIZE != -1:
             index_instances = np.random.choice(xrange(TOTAL_INSTANCES),
                                                DB_SIZE, replace=False)
+            index_test = np.random.choice(xrange(TOTAL_INSTANCES),
+                                          DB_SIZE * 5, replace=False)
+                                        # TODO how many test examples (5 x sz?)
             INSTANCES_DB = [PROBLEM_DB[i] for i in index_instances]
             LABEL_INST_DB = [LABEL_DB[i] for i in index_instances]
+            INSTANCES_TEST_DB = [PROBLEM_DB[i] for i in index_test]
+            LABEL_TEST_DB = [LABEL_DB[i] for i in index_test]
         else:
             INSTANCES_DB = PROBLEM_DB[:]
             LABEL_INST_DB = LABEL_DB[:]
-
+            INSTANCES_TEST_DB = PROBLEM_DB[:]
+            LABEL_TEST_DB = LABEL_DB[:]
         TIME_GEN_LOG = []
 
         PRETTY_STRING = ""
-        #Initial population: mu individuals, valid ones
-        #all random links correctly encoded
+        #Initial population: mu individuals,
+        #all random links correctly encoded?
         for i in xrange(MU):
             net = POPULATION[i][4]
             #Evaluate initial population
-            #fitness = evaluate(net, INSTANCES_DB, LABEL_INST_DB)
             fitness = evaluate_no_pybrain(net, INSTANCES_DB, LABEL_INST_DB)
+            test_perf = evaluate_no_pybrain(net, INSTANCES_TEST_DB,
+                                            LABEL_TEST_DB)
             POPULATION[i] = (POPULATION[i][0], fitness, POPULATION[i][2],
                              POPULATION[i][3], POPULATION[i][4],
-                             POPULATION[i][5], POPULATION[i][6])
+                             POPULATION[i][5], POPULATION[i][6], test_perf)
 
         POPULATION_LOG.append(POPULATION)
-
+        DIV_LOG.append(diversity(POPULATION, N_LINKS))
         ITERATION = 0
         sys.stdout.write(str(ITERATION))
 
@@ -1220,37 +861,36 @@ if __name__ == "__main__":
             #Select lambda (possibly repeated) parents, rank-based
             parents = select(POPULATION, LAMBDA)
 
-            children = [("", 0.0, [], "", None, 0.0, 0.0)] * LAMBDA
+            children = [("", 0.0, [], "", None, 0.0, 0.0, 0.0)] * LAMBDA
 
             #Generate lambda children by mutating lambda selected parents
             #Look for disruptive mutations (e.g. by measuring valid codons)
             #Note: it is easier to break a link gene than creating a new one
             for index, i in enumerate(parents):
                 child = mutate(i[0][:], mut_prob)
-                codons, PRETTY_STRING, c_size = \
-                    extract_codons(child[:], TGT_SIZE,
-                                   (START_CODON, END_CODON),
-                                   pleio=PLEIOTROPY)
-                _, _, coding_chars = extract_codons(child[:], TGT_SIZE,
-                                                    (START_CODON, END_CODON),
-                                                    pleio=False)
-                #net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
-                #                       neur_per_hid=NEUR_HID_LAYER)
+                codons, PRETTY_STRING, c_size, sum_genes_size =\
+                    xtract_codons(child[:], TGT_SIZE,
+                                  (START_CODON, END_CODON),
+                                  pleio=PLEIOTROPY)
+                #Only consider codons with a valid (existing) targeted link
+                codons = [c for c in codons if c[0] < N_LINKS]
+
                 net = map_to_mlp_no_pybrain(codons, N_IN, N_OUT,
                                             n_hidden=N_HID,
                                             neur_per_hid=NEUR_HID_LAYER)
                 #Evaluate children
-                #fitness = evaluate(net, INSTANCES_DB, LABEL_INST_DB)
                 fitness = evaluate_no_pybrain(net, INSTANCES_DB, LABEL_INST_DB)
+                test_perf = evaluate_no_pybrain(net, INSTANCES_TEST_DB,
+                                                LABEL_TEST_DB)
                 individual = (child[:], fitness, codons, PRETTY_STRING,
-                              net, coding_chars, c_size)
+                              net, c_size, sum_genes_size, test_perf)
                 children[index] = individual
 
             full_population = (POPULATION + children)
             #Truncation "plus" survivor sel./replacement [parents + children]
             surviving_individuals = survive(full_population, MU)
 
-            POPULATION = [("", 0.0, [], "", None, 0.0, 0.0)] * MU
+            POPULATION = [("", 0.0, [], "", None, 0.0, 0.0, 0.0)] * MU
             for index, individual in enumerate(surviving_individuals):
                 POPULATION[index] = individual
 
@@ -1265,6 +905,8 @@ if __name__ == "__main__":
         INTERTASK_LOG.append(POPULATION_LOG)
         formatted_fitness = [[format_float(indiv[1]) for indiv in generation]
                              for generation in POPULATION_LOG]
+        formatted_test_perf = [[format_float(indiv[7]) for indiv in generation]
+                               for generation in POPULATION_LOG]
         formatted_size = [[format_float(indiv[2]) for indiv in generation]
                           for generation in DIV_LOG]
         formatted_codons = [[format_float(indiv[0]) for indiv in generation]
@@ -1282,6 +924,7 @@ if __name__ == "__main__":
                             for indiv in generation]
                            for generation in DIV_LOG]
         LOG_FILE.write(str(formatted_fitness) + "\n")
+        TEST_LOG_FILE.write(str(formatted_test_perf) + "\n")
         SIZE_LOG_FILE.write(str(formatted_size) + "\n")
         CODONS_LOG_FILE.write(str(formatted_codons) + "\n")
         GENES_PER_LINK_LOG_FILE.write(str(formatted_genes_per_link) + "\n")
@@ -1303,24 +946,21 @@ if __name__ == "__main__":
             #Initialize population with mutated copies of best_individual
             for index in xrange(MU):
                 altered_copy = mutate(best_individual[0][:], mut_prob)
-                codons, PRETTY_STRING, c_size =\
-                    extract_codons(g, TGT_SIZE, (START_CODON, END_CODON),
-                                   pleio=PLEIOTROPY)
-                _, _, coding_chars = extract_codons(g, TGT_SIZE,
-                                                    (START_CODON, END_CODON),
-                                                    pleio=False)
-                #net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
-                #                       neur_per_hid=NEUR_HID_LAYER)
+                codons, PRETTY_STRING, c_size, sum_genes_size =\
+                    xtract_codons(altered_copy, TGT_SIZE,
+                                  (START_CODON, END_CODON), pleio=PLEIOTROPY)
+                #Only consider codons with a valid (existing) targeted link
+                codons = [c for c in codons if c[0] < N_LINKS]
                 net = map_to_mlp_no_pybrain(codons, N_IN, N_OUT,
                                             n_hidden=N_HID,
                                             neur_per_hid=NEUR_HID_LAYER)
                 individual = (altered_copy, 0.0, codons,
-                              PRETTY_STRING, net, coding_chars, c_size)
+                              PRETTY_STRING, net, c_size, sum_genes_size, 0.0)
                 POPULATION[index] = individual
-
         print
 ###############################################################################
     LOG_FILE.close()
+    TEST_LOG_FILE.close()
     NN_LOG_FILE.close()
     SIZE_LOG_FILE.close()
     CODONS_LOG_FILE.close()
@@ -1351,12 +991,13 @@ if __name__ == "__main__":
         #Test (& generalization if tested on more instances)
         NETS_POPULATION = []
         for g in POPULATION:
-            codons, PRETTY_STRING, c_size = extract_codons(g[0], TGT_SIZE,
-                                                           (START_CODON,
-                                                            END_CODON),
-                                                           pleio=PLEIOTROPY)
-            net = map_to_mlp_light(codons, N_IN, N_OUT, n_hidden=N_HID,
-                                   neur_per_hid=NEUR_HID_LAYER)
+            codons, PRETTY_STRING, c_size, sum_genes_size =\
+                xtract_codons(g[0], TGT_SIZE, (START_CODON, END_CODON),
+                              pleio=PLEIOTROPY)
+            #Only consider codons with a valid (existing) targeted link
+            codons = [c for c in codons if c[0] < N_LINKS]
+            net = map_to_mlp_no_pybrain(codons, N_IN, N_OUT, n_hidden=N_HID,
+                                        neur_per_hid=NEUR_HID_LAYER)
             NETS_POPULATION.append(net)
         TEST_RESULTS = []
         for net in NETS_POPULATION:

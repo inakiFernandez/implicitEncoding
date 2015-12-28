@@ -232,7 +232,7 @@ def plot_one_curve(data, color, axis, label, quartiles=False):
     if quartiles :
         axis.fill_between(np.arange(0, len(med)), perc_25, perc_75,
                           alpha=0.25, linewidth=0, color=color)
-    axis.plot(med, lw=5, label=label, color=color)
+    axis.plot(med, lw=2.5, label=label, color=color)
 
 
     axis.grid(axis='y', color="0.9", linestyle='-', linewidth=1)
@@ -243,6 +243,7 @@ def plot_one_curve(data, color, axis, label, quartiles=False):
     axis.get_yaxis().tick_left()
     axis.tick_params(axis='x', direction='out')
     axis.tick_params(axis='y', length=0)
+    axis.ticklabel_format(axis='y', style='sci', scilimits=(-2,3))
     for spine in axis.spines.values():
         spine.set_position(('outward', 5))
     axis.set_axisbelow(True)
@@ -348,7 +349,7 @@ def draw_data(exp, text = "", runs=False, tex=False, out_folder=""):
     for e in exp:
         (n, data) = e
         pp = PdfPages(out_folder + "/" + str(n) + ".pdf")
-        plot_one_curve(data, colors[(c-3) % len(colors)], ax1,
+        plot_one_curve(data, colors[(c-5) % len(colors)], ax1,
                                     re.sub('[_/]', '', n), True)
         c=c+1
 
@@ -356,7 +357,7 @@ def draw_data(exp, text = "", runs=False, tex=False, out_folder=""):
     #ax1.legend(loc='lower right',prop={'size':25})
     #ax1.set_xlabel('Time (x100)')
     #ax1.set_ylabel('Fitness')
-    pp.savefig()
+    pp.savefig()  # out_folder + "/" + str(n) + ".ps" DOESNT WORK (Alpha channel)
 
     #figtext(.08, .02, text, fontsize=10)
 
